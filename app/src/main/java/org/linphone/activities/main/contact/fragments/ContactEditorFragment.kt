@@ -46,7 +46,6 @@ import org.linphone.core.tools.Log
 import org.linphone.databinding.ContactEditorFragmentBinding
 import org.linphone.utils.Event
 import org.linphone.utils.FileUtils
-import org.linphone.utils.ImageUtils
 import org.linphone.utils.PermissionHelper
 
 class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), SyncAccountPickerFragment.SyncAccountPickedListener {
@@ -59,7 +58,7 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.lifecycleOwner = this
+        binding.lifecycleOwner = viewLifecycleOwner
 
         sharedViewModel = requireActivity().run {
             ViewModelProvider(this).get(SharedMainViewModel::class.java)
@@ -70,6 +69,8 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
             ContactEditorViewModelFactory(sharedViewModel.selectedContact.value)
         )[ContactEditorViewModel::class.java]
         binding.viewModel = viewModel
+
+        useMaterialSharedAxisXForwardAnimation = sharedViewModel.isSlidingPaneSlideable.value == false
 
         binding.setBackClickListener {
             goBack()
@@ -111,7 +112,7 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
 
     override fun goBack() {
         if (!findNavController().popBackStack()) {
-            if (sharedViewModel.canSlidingPaneBeClosed.value == true) {
+            if (sharedViewModel.isSlidingPaneSlideable.value == true) {
                 sharedViewModel.closeSlidingPaneEvent.value = Event(true)
             } else {
                 navigateToEmptyContact()
@@ -146,7 +147,7 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (resultCode == Activity.RESULT_OK) {
             lifecycleScope.launch {
-                val contactImageFilePath = ImageUtils.getFilePathFromPickerIntent(data, temporaryPicturePath)
+                val contactImageFilePath = FileUtils.getFilePathFromPickerIntent(data, temporaryPicturePath)
                 if (contactImageFilePath != null) {
                     viewModel.setPictureFromPath(contactImageFilePath)
                 }

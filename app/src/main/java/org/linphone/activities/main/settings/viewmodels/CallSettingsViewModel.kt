@@ -20,12 +20,13 @@
 package org.linphone.activities.main.settings.viewmodels
 
 import androidx.lifecycle.MutableLiveData
-import java.lang.NumberFormatException
 import org.linphone.R
 import org.linphone.activities.main.settings.SettingListenerStub
 import org.linphone.core.MediaEncryption
 import org.linphone.mediastream.Version
+import org.linphone.telecom.TelecomHelper
 import org.linphone.utils.Event
+import org.linphone.utils.PermissionHelper
 
 class CallSettingsViewModel : GenericSettingsViewModel() {
     val deviceRingtoneListener = object : SettingListenerStub() {
@@ -62,10 +63,32 @@ class CallSettingsViewModel : GenericSettingsViewModel() {
     }
     val encryptionMandatory = MutableLiveData<Boolean>()
 
+    val useTelecomManagerListener = object : SettingListenerStub() {
+        override fun onBoolValueChanged(newValue: Boolean) {
+            if (newValue &&
+                (
+                    !PermissionHelper.get().hasTelecomManagerPermissions() ||
+                        !TelecomHelper.exists() ||
+                        !TelecomHelper.get().isAccountEnabled()
+                    )
+            ) {
+                enableTelecomManagerEvent.value = Event(true)
+            } else {
+                if (!newValue && TelecomHelper.exists()) TelecomHelper.get().removeAccount()
+                prefs.useTelecomManager = newValue
+            }
+        }
+    }
+    val useTelecomManager = MutableLiveData<Boolean>()
+    val enableTelecomManagerEvent: MutableLiveData<Event<Boolean>> by lazy {
+        MutableLiveData<Event<Boolean>>()
+    }
+    val api26OrHigher = MutableLiveData<Boolean>()
+
     val fullScreenListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
-                prefs.fullScreenCallUI = newValue
-            }
+            prefs.fullScreenCallUI = newValue
+        }
     }
     val fullScreen = MutableLiveData<Boolean>()
 
@@ -100,6 +123,13 @@ class CallSettingsViewModel : GenericSettingsViewModel() {
         }
     }
     val rfc2833Dtmf = MutableLiveData<Boolean>()
+
+    val autoStartCallRecordingListener = object : SettingListenerStub() {
+        override fun onBoolValueChanged(newValue: Boolean) {
+            prefs.automaticallyStartCallRecording = newValue
+        }
+    }
+    val autoStartCallRecording = MutableLiveData<Boolean>()
 
     val autoStartListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
@@ -186,11 +216,15 @@ class CallSettingsViewModel : GenericSettingsViewModel() {
         initEncryptionList()
         encryptionMandatory.value = core.isMediaEncryptionMandatory
 
+        useTelecomManager.value = prefs.useTelecomManager
+        api26OrHigher.value = Version.sdkAboveOrEqual(Version.API26_O_80)
+
         fullScreen.value = prefs.fullScreenCallUI
         overlay.value = prefs.showCallOverlay
         systemWideOverlay.value = prefs.systemWideCallOverlay
         sipInfoDtmf.value = core.useInfoForDtmf
         rfc2833Dtmf.value = core.useRfc2833ForDtmf
+        autoStartCallRecording.value = prefs.automaticallyStartCallRecording
         autoStart.value = prefs.callRightAway
         autoAnswer.value = prefs.autoAnswerEnabled
         autoAnswerDelay.value = prefs.autoAnswerDelay

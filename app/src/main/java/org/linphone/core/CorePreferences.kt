@@ -133,6 +133,13 @@ class CorePreferences constructor(private val context: Context) {
             config.setInt("app", "dark_mode", value)
         }
 
+    /** Allow to make screenshots of encrypted chat rooms, disables fragment's secure mode */
+    var disableSecureMode: Boolean
+        get() = config.getBool("app", "disable_fragment_secure_mode", false)
+        set(value) {
+            config.setBool("app", "disable_fragment_secure_mode", value)
+        }
+
     /* Audio */
 
     /* Video */
@@ -276,6 +283,19 @@ class CorePreferences constructor(private val context: Context) {
             config.setBool("app", "call_right_away", value)
         }
 
+    var automaticallyStartCallRecording: Boolean
+        get() = config.getBool("app", "auto_start_call_record", false)
+        set(value) {
+            config.setBool("app", "auto_start_call_record", value)
+        }
+
+    var useTelecomManager: Boolean
+        // Some permissions are required, so keep it to false so user has to manually enable it and give permissions
+        get() = config.getBool("app", "use_self_managed_telecom_manager", false)
+        set(value) {
+            config.setBool("app", "use_self_managed_telecom_manager", value)
+        }
+
     var fullScreenCallUI: Boolean
         get() = config.getBool("app", "full_screen_call", true)
         set(value) {
@@ -398,6 +418,14 @@ class CorePreferences constructor(private val context: Context) {
     // This will prevent UI from showing up, except for the launcher & the foreground service notification
     val preventInterfaceFromShowingUp: Boolean
         get() = config.getBool("app", "keep_app_invisible", false)
+
+    // By default we will record voice messages using MKV format and Opus audio encoding
+    // If disabled, WAV format will be used instead. Warning: files will be heavier!
+    val voiceMessagesFormatMkv: Boolean
+        get() = config.getBool("app", "record_voice_messages_in_mkv_format", true)
+
+    val useEphemeralPerDeviceMode: Boolean
+        get() = config.getBool("app", "ephemeral_chat_messages_settings_per_device", false)
 
     /* Default values related */
 

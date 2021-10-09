@@ -400,6 +400,8 @@
     <string name="call_settings_media_encryption_zrtp">ZRTP</string>
     <string name="call_settings_media_encryption_dtls">DTLS</string>
     <string name="call_settings_encryption_mandatory_title">Media encryption mandatory</string>
+    <string name="call_settings_use_telecom_manager_title">Improve interactions with bluetooth devices</string>
+    <string name="call_settings_use_telecom_manager_summary">Requires some extra permissions</string>
     <string name="call_settings_full_screen_title">Full screen app while in call</string>
     <string name="call_settings_full_screen_summary">Hides status and navigation bars</string>
     <string name="call_settings_overlay_title">Overlay call notification</string>
@@ -420,6 +422,7 @@
     <string name="call_settings_ring_during_early_media_title">Ring during incoming early media</string>
     <string name="call_settings_pause_calls_lost_audio_focus_title">Pause calls when audio focus is lost</string>
     <string name="call_settings_go_to_android_notification_settings">Android notification settings</string>
+    <string name="call_settings_auto_start_recording_title">Automatically start call recording</string>
 
     <!-- Chat settings -->
     <string name="chat_settings_mark_as_read_notif_dismissal_title">Mark as read upon notification dismissal</string>
@@ -491,6 +494,8 @@
     <string name="advanced_settings_reset_debug_logs_title">Reset logs</string>
     <string name="advanced_settings_debug_title">Debug settings</string>
     <string name="advanced_settings_other_title">Other settings</string>
+    <string name="advanced_settings_disable_fragment_security_title">Disable UI\'s secure mode</string>
+    <string name="advanced_settings_disable_fragment_security_summary">Allow screen capture/recording on sensitive views</string>
 
     <!-- Tunnel settings -->
     <string name="tunnel_settings_hostname_url_title">Hostname</string>

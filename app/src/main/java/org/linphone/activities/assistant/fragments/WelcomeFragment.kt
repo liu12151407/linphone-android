@@ -47,7 +47,7 @@ class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.lifecycleOwner = this
+        binding.lifecycleOwner = viewLifecycleOwner
 
         viewModel = ViewModelProvider(this).get(WelcomeViewModel::class.java)
         binding.viewModel = viewModel
@@ -72,9 +72,12 @@ class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
             navigateToRemoteProvisioning()
         }
 
-        viewModel.termsAndPrivacyAccepted.observe(viewLifecycleOwner, {
-            if (it) corePreferences.readAndAgreeTermsAndPrivacy = true
-        })
+        viewModel.termsAndPrivacyAccepted.observe(
+            viewLifecycleOwner,
+            {
+                if (it) corePreferences.readAndAgreeTermsAndPrivacy = true
+            }
+        )
 
         setUpTermsAndPrivacyLinks()
     }

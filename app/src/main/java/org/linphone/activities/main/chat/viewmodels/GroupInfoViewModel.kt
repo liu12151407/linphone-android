@@ -23,6 +23,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import org.linphone.LinphoneApplication.Companion.coreContext
+import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.activities.main.chat.GroupChatRoomMember
 import org.linphone.activities.main.chat.data.GroupInfoParticipantData
@@ -117,6 +118,14 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
         val params: ChatRoomParams = coreContext.core.createDefaultChatRoomParams()
         params.enableEncryption(isEncrypted.value == true)
         params.enableGroup(true)
+        if (isEncrypted.value == true) {
+            params.ephemeralMode = if (corePreferences.useEphemeralPerDeviceMode)
+                ChatRoomEphemeralMode.DeviceManaged
+            else
+                ChatRoomEphemeralMode.AdminManaged
+        }
+        params.ephemeralLifetime = 0 // Make sure ephemeral is disabled by default
+        Log.i("[Chat Room Group Info] Ephemeral mode is ${params.ephemeralMode}, lifetime is ${params.ephemeralLifetime}")
         params.subject = subject.value
 
         val addresses = arrayOfNulls<Address>(participants.value.orEmpty().size)
@@ -211,9 +220,11 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
 
         if (chatRoom != null) {
             for (participant in chatRoom.participants) {
-                list.add(GroupInfoParticipantData(
-                    GroupChatRoomMember(participant.address, participant.isAdmin, participant.securityLevel, canBeSetAdmin = true)
-                ))
+                list.add(
+                    GroupInfoParticipantData(
+                        GroupChatRoomMember(participant.address, participant.isAdmin, participant.securityLevel, canBeSetAdmin = true)
+                    )
+                )
             }
         }
 

@@ -41,7 +41,7 @@ class RemoteProvisioningFragment : GenericFragment<AssistantRemoteProvisioningFr
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.lifecycleOwner = this
+        binding.lifecycleOwner = viewLifecycleOwner
 
         sharedViewModel = requireActivity().run {
             ViewModelProvider(this).get(SharedAssistantViewModel::class.java)
@@ -54,20 +54,23 @@ class RemoteProvisioningFragment : GenericFragment<AssistantRemoteProvisioningFr
             navigateToQrCode()
         }
 
-        viewModel.fetchSuccessfulEvent.observe(viewLifecycleOwner, {
-            it.consume { success ->
-                if (success) {
-                    if (coreContext.core.isEchoCancellerCalibrationRequired) {
-                        navigateToEchoCancellerCalibration()
+        viewModel.fetchSuccessfulEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { success ->
+                    if (success) {
+                        if (coreContext.core.isEchoCancellerCalibrationRequired) {
+                            navigateToEchoCancellerCalibration()
+                        } else {
+                            requireActivity().finish()
+                        }
                     } else {
-                        requireActivity().finish()
+                        val activity = requireActivity() as AssistantActivity
+                        activity.showSnackBar(R.string.assistant_remote_provisioning_failure)
                     }
-                } else {
-                    val activity = requireActivity() as AssistantActivity
-                    activity.showSnackBar(R.string.assistant_remote_provisioning_failure)
                 }
             }
-        })
+        )
 
         viewModel.urlToFetch.value = sharedViewModel.remoteProvisioningUrl.value ?: coreContext.core.provisioningUri
     }

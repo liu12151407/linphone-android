@@ -24,11 +24,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.transition.MaterialSharedAxis
 import org.linphone.BuildConfig
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
@@ -44,6 +46,7 @@ import org.linphone.core.tools.Log
 import org.linphone.databinding.DialerFragmentBinding
 import org.linphone.utils.AppUtils
 import org.linphone.utils.DialogUtils
+import org.linphone.utils.Event
 
 class DialerFragment : SecureFragment<DialerFragmentBinding>() {
     private lateinit var viewModel: DialerViewModel
@@ -56,7 +59,7 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.lifecycleOwner = this
+        binding.lifecycleOwner = viewLifecycleOwner
 
         viewModel = ViewModelProvider(this).get(DialerViewModel::class.java)
         binding.viewModel = viewModel
@@ -65,7 +68,30 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
             ViewModelProvider(this).get(SharedMainViewModel::class.java)
         }
 
+        useMaterialSharedAxisXForwardAnimation = false
+        sharedViewModel.updateDialerAnimationsBasedOnDestination.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { id ->
+                    val forward = when (id) {
+                        R.id.masterChatRoomsFragment -> false
+                        else -> true
+                    }
+                    if (corePreferences.enableAnimations) {
+                        val portraitOrientation = resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+                        val axis = if (portraitOrientation) MaterialSharedAxis.X else MaterialSharedAxis.Y
+                        enterTransition = MaterialSharedAxis(axis, forward)
+                        reenterTransition = MaterialSharedAxis(axis, forward)
+                        returnTransition = MaterialSharedAxis(axis, !forward)
+                        exitTransition = MaterialSharedAxis(axis, !forward)
+                    }
+                }
+            }
+        )
+
         binding.setNewContactClickListener {
+            sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(R.id.masterContactsFragment)
+            sharedViewModel.updateContactsAnimationsBasedOnDestination.value = Event(R.id.dialerFragment)
             navigateToContacts(viewModel.enteredUri.value)
         }
 
@@ -95,35 +121,44 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
         }
         arguments?.clear()
 
-        viewModel.enteredUri.observe(viewLifecycleOwner, {
-            if (it == corePreferences.debugPopupCode) {
-                displayDebugPopup()
-                viewModel.enteredUri.value = ""
-            }
-        })
-
-        viewModel.uploadFinishedEvent.observe(viewLifecycleOwner, {
-            it.consume { url ->
-                // To prevent being trigger when using the Send Logs button in About page
-                if (uploadLogsInitiatedByUs) {
-                    val clipboard =
-                        requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("Logs url", url)
-                    clipboard.setPrimaryClip(clip)
-
-                    val activity = requireActivity() as MainActivity
-                    activity.showSnackBar(R.string.logs_url_copied_to_clipboard)
-
-                    AppUtils.shareUploadedLogsUrl(activity, url)
+        viewModel.enteredUri.observe(
+            viewLifecycleOwner,
+            {
+                if (it == corePreferences.debugPopupCode) {
+                    displayDebugPopup()
+                    viewModel.enteredUri.value = ""
                 }
             }
-        })
+        )
 
-        viewModel.updateAvailableEvent.observe(viewLifecycleOwner, {
-            it.consume { url ->
-                displayNewVersionAvailableDialog(url)
+        viewModel.uploadFinishedEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { url ->
+                    // To prevent being trigger when using the Send Logs button in About page
+                    if (uploadLogsInitiatedByUs) {
+                        val clipboard =
+                            requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Logs url", url)
+                        clipboard.setPrimaryClip(clip)
+
+                        val activity = requireActivity() as MainActivity
+                        activity.showSnackBar(R.string.logs_url_copied_to_clipboard)
+
+                        AppUtils.shareUploadedLogsUrl(activity, url)
+                    }
+                }
             }
-        })
+        )
+
+        viewModel.updateAvailableEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { url ->
+                    displayNewVersionAvailableDialog(url)
+                }
+            }
+        )
 
         Log.i("[Dialer] Pending call transfer mode = ${sharedViewModel.pendingCallTransfer}")
         viewModel.transferVisibility.value = sharedViewModel.pendingCallTransfer
@@ -204,11 +239,14 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
             dialog.dismiss()
         }
 
-        viewModel.showOkButton({
-            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            startActivity(browserIntent)
-            dialog.dismiss()
-        }, getString(R.string.dialog_ok))
+        viewModel.showOkButton(
+            {
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                startActivity(browserIntent)
+                dialog.dismiss()
+            },
+            getString(R.string.dialog_ok)
+        )
 
         dialog.show()
     }

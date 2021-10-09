@@ -72,9 +72,12 @@ class ChatRoomsListAdapter(
 
                 // This is for item selection through ListTopBarFragment
                 selectionListViewModel = selectionViewModel
-                selectionViewModel.isEditionEnabled.observe(viewLifecycleOwner, {
-                    position = adapterPosition
-                })
+                selectionViewModel.isEditionEnabled.observe(
+                    viewLifecycleOwner,
+                    {
+                        position = adapterPosition
+                    }
+                )
 
                 forwardPending = isForwardPending
 
@@ -83,7 +86,6 @@ class ChatRoomsListAdapter(
                         selectionViewModel.onToggleSelect(adapterPosition)
                     } else {
                         selectedChatRoomEvent.value = Event(chatRoomViewModel.chatRoom)
-                        chatRoomViewModel.chatRoom.markAsRead()
                     }
                 }
 

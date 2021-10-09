@@ -26,13 +26,11 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Parcelable
 import android.provider.MediaStore
-import android.view.MenuInflater
-import android.view.MenuItem
-import android.view.MotionEvent
-import android.view.View
-import androidx.appcompat.view.menu.MenuBuilder
-import androidx.appcompat.view.menu.MenuPopupHelper
+import android.view.*
+import android.widget.PopupWindow
 import androidx.core.content.FileProvider
+import androidx.core.view.doOnPreDraw
+import androidx.databinding.DataBindingUtil
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -40,7 +38,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.lang.IllegalArgumentException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
@@ -61,6 +61,7 @@ import org.linphone.compatibility.Compatibility
 import org.linphone.core.*
 import org.linphone.core.tools.Log
 import org.linphone.databinding.ChatRoomDetailFragmentBinding
+import org.linphone.databinding.ChatRoomMenuBindingImpl
 import org.linphone.utils.*
 import org.linphone.utils.Event
 
@@ -95,12 +96,19 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.lifecycleOwner = this
+        binding.lifecycleOwner = viewLifecycleOwner
 
         sharedViewModel = requireActivity().run {
             ViewModelProvider(this).get(SharedMainViewModel::class.java)
         }
         binding.sharedMainViewModel = sharedViewModel
+
+        useMaterialSharedAxisXForwardAnimation = sharedViewModel.isSlidingPaneSlideable.value == false
+
+        view.doOnPreDraw {
+            // Notifies fragment is ready to be drawn
+            sharedViewModel.chatRoomFragmentOpenedEvent.value = Event(true)
+        }
 
         val localSipUri = arguments?.getString("LocalSipUri")
         val remoteSipUri = arguments?.getString("RemoteSipUri")
@@ -115,7 +123,8 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
             val localAddress = Factory.instance().createAddress(localSipUri)
             val remoteSipAddress = Factory.instance().createAddress(remoteSipUri)
             sharedViewModel.selectedChatRoom.value = coreContext.core.searchChatRoom(
-                null, localAddress, remoteSipAddress, arrayOfNulls(
+                null, localAddress, remoteSipAddress,
+                arrayOfNulls(
                     0
                 )
             )
@@ -189,146 +198,186 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
         }
         binding.chatMessagesList.addOnScrollListener(chatScrollListener)
 
-        chatSendingViewModel.textToSend.observe(viewLifecycleOwner, {
-            chatSendingViewModel.onTextToSendChanged(it)
-        })
-
-        chatSendingViewModel.requestRecordAudioPermissionEvent.observe(viewLifecycleOwner, {
-            it.consume {
-                Log.i("[Chat Room] Asking for RECORD_AUDIO permission")
-                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 2)
+        chatSendingViewModel.textToSend.observe(
+            viewLifecycleOwner,
+            {
+                chatSendingViewModel.onTextToSendChanged(it)
             }
-        })
+        )
 
-        listViewModel.events.observe(viewLifecycleOwner, { events ->
-            adapter.submitList(events)
-        })
-
-        listViewModel.messageUpdatedEvent.observe(viewLifecycleOwner, {
-            it.consume { position ->
-                adapter.notifyItemChanged(position)
-            }
-        })
-
-        listViewModel.requestWriteExternalStoragePermissionEvent.observe(viewLifecycleOwner, {
-            it.consume {
-                requestPermissions(arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
-            }
-        })
-
-        adapter.deleteMessageEvent.observe(viewLifecycleOwner, {
-            it.consume { chatMessage ->
-                listViewModel.deleteMessage(chatMessage)
-            }
-        })
-
-        adapter.resendMessageEvent.observe(viewLifecycleOwner, {
-            it.consume { chatMessage ->
-                listViewModel.resendMessage(chatMessage)
-            }
-        })
-
-        adapter.forwardMessageEvent.observe(viewLifecycleOwner, {
-            it.consume { chatMessage ->
-                // Remove observer before setting the message to forward
-                // as we don't want to forward it in this chat room
-                sharedViewModel.messageToForwardEvent.removeObservers(viewLifecycleOwner)
-                sharedViewModel.messageToForwardEvent.value = Event(chatMessage)
-                sharedViewModel.isPendingMessageForward.value = true
-
-                if (sharedViewModel.canSlidingPaneBeClosed.value == true) {
-                    Log.i("[Chat Room] Forwarding message, going to chat rooms list")
-                    sharedViewModel.closeSlidingPaneEvent.value = Event(true)
+        chatSendingViewModel.requestRecordAudioPermissionEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume {
+                    Log.i("[Chat Room] Asking for RECORD_AUDIO permission")
+                    requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 2)
                 }
             }
-        })
+        )
 
-        adapter.replyMessageEvent.observe(viewLifecycleOwner, {
-            it.consume { chatMessage ->
-                chatSendingViewModel.pendingChatMessageToReplyTo.value?.destroy()
-                chatSendingViewModel.pendingChatMessageToReplyTo.value = ChatMessageData(chatMessage)
-                chatSendingViewModel.isPendingAnswer.value = true
+        listViewModel.events.observe(
+            viewLifecycleOwner,
+            { events ->
+                adapter.submitList(events)
             }
-        })
+        )
 
-        adapter.showImdnForMessageEvent.observe(viewLifecycleOwner, {
-            it.consume { chatMessage ->
-                val args = Bundle()
-                args.putString("MessageId", chatMessage.messageId)
-                navigateToImdn(args)
+        listViewModel.messageUpdatedEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { position ->
+                    adapter.notifyItemChanged(position)
+                }
             }
-        })
+        )
 
-        adapter.addSipUriToContactEvent.observe(viewLifecycleOwner, {
-            it.consume { sipUri ->
-                Log.i("[Chat Room] Going to contacts list with SIP URI to add: $sipUri")
-                navigateToContacts(sipUri)
+        listViewModel.requestWriteExternalStoragePermissionEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume {
+                    requestPermissions(arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+                }
             }
-        })
+        )
 
-        adapter.openContentEvent.observe(viewLifecycleOwner, {
-            it.consume { content ->
-                val path = content.filePath.orEmpty()
+        adapter.deleteMessageEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { chatMessage ->
+                    listViewModel.deleteMessage(chatMessage)
+                }
+            }
+        )
 
-                if (!File(path).exists()) {
-                    (requireActivity() as MainActivity).showSnackBar(R.string.chat_room_file_not_found)
-                } else {
-                    Log.i("[Chat Message] Opening file: $path")
-                    sharedViewModel.contentToOpen.value = content
+        adapter.resendMessageEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { chatMessage ->
+                    listViewModel.resendMessage(chatMessage)
+                }
+            }
+        )
 
-                    if (corePreferences.useInAppFileViewerForNonEncryptedFiles || content.isFileEncrypted) {
-                        val preventScreenshots =
-                            viewModel.chatRoom.currentParams.encryptionEnabled()
-                        when {
-                            FileUtils.isExtensionImage(path) -> navigateToImageFileViewer(
-                                preventScreenshots
-                            )
-                            FileUtils.isExtensionVideo(path) -> navigateToVideoFileViewer(
-                                preventScreenshots
-                            )
-                            FileUtils.isExtensionAudio(path) -> navigateToAudioFileViewer(
-                                preventScreenshots
-                            )
-                            FileUtils.isExtensionPdf(path) -> navigateToPdfFileViewer(
-                                preventScreenshots
-                            )
-                            FileUtils.isPlainTextFile(path) -> navigateToTextFileViewer(
-                                preventScreenshots
-                            )
-                            else -> {
-                                if (content.isFileEncrypted) {
-                                    Log.w("[Chat Message] File is encrypted and can't be opened in one of our viewers...")
-                                    showDialogForUserConsentBeforeExportingFileInThirdPartyApp(content)
-                                } else if (!FileUtils.openFileInThirdPartyApp(requireActivity(), path)) {
-                                    showDialogToSuggestOpeningFileAsText()
+        adapter.forwardMessageEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { chatMessage ->
+                    // Remove observer before setting the message to forward
+                    // as we don't want to forward it in this chat room
+                    sharedViewModel.messageToForwardEvent.removeObservers(viewLifecycleOwner)
+                    sharedViewModel.messageToForwardEvent.value = Event(chatMessage)
+                    sharedViewModel.isPendingMessageForward.value = true
+
+                    if (sharedViewModel.isSlidingPaneSlideable.value == true) {
+                        Log.i("[Chat Room] Forwarding message, going to chat rooms list")
+                        sharedViewModel.closeSlidingPaneEvent.value = Event(true)
+                    }
+                }
+            }
+        )
+
+        adapter.replyMessageEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { chatMessage ->
+                    chatSendingViewModel.pendingChatMessageToReplyTo.value?.destroy()
+                    chatSendingViewModel.pendingChatMessageToReplyTo.value = ChatMessageData(chatMessage)
+                    chatSendingViewModel.isPendingAnswer.value = true
+                }
+            }
+        )
+
+        adapter.showImdnForMessageEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { chatMessage ->
+                    val args = Bundle()
+                    args.putString("MessageId", chatMessage.messageId)
+                    navigateToImdn(args)
+                }
+            }
+        )
+
+        adapter.addSipUriToContactEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { sipUri ->
+                    Log.i("[Chat Room] Going to contacts list with SIP URI to add: $sipUri")
+                    sharedViewModel.updateContactsAnimationsBasedOnDestination.value = Event(R.id.masterChatRoomsFragment)
+                    navigateToContacts(sipUri)
+                }
+            }
+        )
+
+        adapter.openContentEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { content ->
+                    val path = content.filePath.orEmpty()
+
+                    if (!File(path).exists()) {
+                        (requireActivity() as MainActivity).showSnackBar(R.string.chat_room_file_not_found)
+                    } else {
+                        Log.i("[Chat Message] Opening file: $path")
+                        sharedViewModel.contentToOpen.value = content
+
+                        if (corePreferences.useInAppFileViewerForNonEncryptedFiles || content.isFileEncrypted) {
+                            val preventScreenshots =
+                                viewModel.chatRoom.currentParams.encryptionEnabled()
+                            when {
+                                FileUtils.isExtensionImage(path) -> navigateToImageFileViewer(
+                                    preventScreenshots
+                                )
+                                FileUtils.isExtensionVideo(path) -> navigateToVideoFileViewer(
+                                    preventScreenshots
+                                )
+                                FileUtils.isExtensionAudio(path) -> navigateToAudioFileViewer(
+                                    preventScreenshots
+                                )
+                                FileUtils.isExtensionPdf(path) -> navigateToPdfFileViewer(
+                                    preventScreenshots
+                                )
+                                FileUtils.isPlainTextFile(path) -> navigateToTextFileViewer(
+                                    preventScreenshots
+                                )
+                                else -> {
+                                    if (content.isFileEncrypted) {
+                                        Log.w("[Chat Message] File is encrypted and can't be opened in one of our viewers...")
+                                        showDialogForUserConsentBeforeExportingFileInThirdPartyApp(content)
+                                    } else if (!FileUtils.openFileInThirdPartyApp(requireActivity(), path)) {
+                                        showDialogToSuggestOpeningFileAsText()
+                                    }
                                 }
                             }
-                        }
-                    } else {
-                        if (!FileUtils.openFileInThirdPartyApp(requireActivity(), path)) {
-                            showDialogToSuggestOpeningFileAsText()
+                        } else {
+                            if (!FileUtils.openFileInThirdPartyApp(requireActivity(), path)) {
+                                showDialogToSuggestOpeningFileAsText()
+                            }
                         }
                     }
                 }
             }
-        })
+        )
 
-        adapter.scrollToChatMessageEvent.observe(viewLifecycleOwner, {
-            it.consume { chatMessage ->
-                val events = listViewModel.events.value.orEmpty()
-                val eventLog = events.find { eventLog ->
-                    if (eventLog.eventLog.type == EventLog.Type.ConferenceChatMessage) {
-                        (eventLog.data as ChatMessageData).chatMessage.messageId == chatMessage.messageId
-                    } else false
-                }
-                val index = events.indexOf(eventLog)
-                try {
-                    binding.chatMessagesList.smoothScrollToPosition(index)
-                } catch (iae: IllegalArgumentException) {
-                    Log.e("[Chat Room] Can't scroll to position $index")
+        adapter.scrollToChatMessageEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { chatMessage ->
+                    val events = listViewModel.events.value.orEmpty()
+                    val eventLog = events.find { eventLog ->
+                        if (eventLog.eventLog.type == EventLog.Type.ConferenceChatMessage) {
+                            (eventLog.data as ChatMessageData).chatMessage.messageId == chatMessage.messageId
+                        } else false
+                    }
+                    val index = events.indexOf(eventLog)
+                    try {
+                        binding.chatMessagesList.smoothScrollToPosition(index)
+                    } catch (iae: IllegalArgumentException) {
+                        Log.e("[Chat Room] Can't scroll to position $index")
+                    }
                 }
             }
-        })
+        )
 
         binding.setBackClickListener {
             goBack()
@@ -336,7 +385,8 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
 
         binding.setTitleClickListener {
             binding.sipUri.visibility = if (!viewModel.oneToOneChatRoom ||
-                binding.sipUri.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                binding.sipUri.visibility == View.VISIBLE
+            ) View.GONE else View.VISIBLE
         }
 
         binding.setMenuClickListener {
@@ -360,7 +410,8 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
                     arrayOf(
                         android.Manifest.permission.READ_EXTERNAL_STORAGE,
                         android.Manifest.permission.CAMERA
-                    ), 0
+                    ),
+                    0
                 )
             }
         }
@@ -400,13 +451,34 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
             }
         }
 
-        sharedViewModel.messageToForwardEvent.observe(viewLifecycleOwner, {
-            it.consume { chatMessage ->
-                Log.i("[Chat Room] Found message to transfer")
-                showForwardConfirmationDialog(chatMessage)
-                sharedViewModel.isPendingMessageForward.value = false
+        sharedViewModel.richContentUri.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { uri ->
+                    Log.i("[Chat] Found rich content URI: $uri")
+                    lifecycleScope.launch {
+                        withContext(Dispatchers.Main) {
+                            val path = FileUtils.getFilePath(requireContext(), uri)
+                            Log.i("[Chat] Rich content URI: $uri matching path is: $path")
+                            if (path != null) {
+                                chatSendingViewModel.addAttachment(path)
+                            }
+                        }
+                    }
+                }
             }
-        })
+        )
+
+        sharedViewModel.messageToForwardEvent.observe(
+            viewLifecycleOwner,
+            {
+                it.consume { chatMessage ->
+                    Log.i("[Chat Room] Found message to transfer")
+                    showForwardConfirmationDialog(chatMessage)
+                    sharedViewModel.isPendingMessageForward.value = false
+                }
+            }
+        )
     }
 
     override fun deleteItems(indexesOfItemToDelete: ArrayList<Int>) {
@@ -449,7 +521,7 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
             // Prevent notifications for this chat room to be displayed
             val peerAddress = viewModel.chatRoom.peerAddress.asStringUriOnly()
             coreContext.notificationsManager.currentlyDisplayedChatRoomAddress = peerAddress
-            coreContext.notificationsManager.cancelChatNotificationIdForSipUri(peerAddress)
+            viewModel.chatRoom.markAsRead()
         } else {
             Log.e("[Chat Room] Fragment resuming but viewModel lateinit property isn't initialized!")
         }
@@ -464,10 +536,12 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (resultCode == Activity.RESULT_OK) {
             lifecycleScope.launch {
-                for (fileToUploadPath in ImageUtils.getFilesPathFromPickerIntent(
-                    data,
-                    chatSendingViewModel.temporaryFileUploadPath
-                )) {
+                for (
+                    fileToUploadPath in FileUtils.getFilesPathFromPickerIntent(
+                        data,
+                        chatSendingViewModel.temporaryFileUploadPath
+                    )
+                ) {
                     chatSendingViewModel.addAttachment(fileToUploadPath)
                 }
             }
@@ -476,7 +550,7 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
 
     override fun goBack() {
         if (!findNavController().popBackStack()) {
-            if (sharedViewModel.canSlidingPaneBeClosed.value == true) {
+            if (sharedViewModel.isSlidingPaneSlideable.value == true) {
                 sharedViewModel.closeSlidingPaneEvent.value = Event(true)
             } else {
                 navigateToEmptyChatRoom()
@@ -502,20 +576,23 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
             val okLabel = if (viewModel.oneParticipantOneDevice) getString(R.string.dialog_call) else getString(
                 R.string.dialog_ok
             )
-            dialogViewModel.showOkButton({ doNotAskAgain ->
-                if (doNotAskAgain) corePreferences.limeSecurityPopupEnabled = false
+            dialogViewModel.showOkButton(
+                { doNotAskAgain ->
+                    if (doNotAskAgain) corePreferences.limeSecurityPopupEnabled = false
 
-                val address = viewModel.onlyParticipantOnlyDeviceAddress
-                if (viewModel.oneParticipantOneDevice) {
-                    if (address != null) {
-                        coreContext.startCall(address, true)
+                    val address = viewModel.onlyParticipantOnlyDeviceAddress
+                    if (viewModel.oneParticipantOneDevice) {
+                        if (address != null) {
+                            coreContext.startCall(address, true)
+                        }
+                    } else {
+                        navigateToDevices()
                     }
-                } else {
-                    navigateToDevices()
-                }
 
-                dialog.dismiss()
-            }, okLabel)
+                    dialog.dismiss()
+                },
+                okLabel
+            )
 
             dialog.show()
         } else {
@@ -551,63 +628,85 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
             dialog.dismiss()
         }
 
-        viewModel.showOkButton({
-            Log.i("[Chat Room] Transfer confirmed")
-            chatSendingViewModel.transferMessage(chatMessage)
-            dialog.dismiss()
-        }, getString(R.string.chat_message_context_menu_forward))
+        viewModel.showOkButton(
+            {
+                Log.i("[Chat Room] Transfer confirmed")
+                chatSendingViewModel.transferMessage(chatMessage)
+                dialog.dismiss()
+            },
+            getString(R.string.chat_message_context_menu_forward)
+        )
 
         dialog.show()
     }
 
     private fun showPopupMenu(chatRoom: ChatRoom) {
-        val builder = MenuBuilder(requireContext())
-        val popupMenu = MenuPopupHelper(requireContext(), builder, binding.menu)
-        popupMenu.setForceShowIcon(true)
+        val popupView: ChatRoomMenuBindingImpl = DataBindingUtil.inflate(
+            LayoutInflater.from(context),
+            R.layout.chat_room_menu, null, false
+        )
 
-        MenuInflater(requireContext()).inflate(R.menu.chat_room_menu, builder)
-        if (viewModel.oneToOneChatRoom) {
-            builder.removeItem(R.id.chat_room_group_info)
+        val itemSize = AppUtils.getDimension(R.dimen.chat_room_popup_item_height).toInt()
+        var totalSize = itemSize * 4
+
+        if (!viewModel.encryptedChatRoom) {
+            popupView.devicesHidden = true
+            totalSize -= itemSize
+            popupView.ephemeralHidden = true
+            totalSize -= itemSize
+        } else {
+            if (viewModel.oneToOneChatRoom) {
+                popupView.groupInfoHidden = true
+                totalSize -= itemSize
+            }
 
             // If one participant one device, a click on security badge
             // will directly start a call or show the dialog, so don't show this menu
             if (viewModel.oneParticipantOneDevice) {
-                builder.removeItem(R.id.chat_room_participants_devices)
+                popupView.devicesHidden = true
+                totalSize -= itemSize
             }
-        }
 
-        if (!viewModel.encryptedChatRoom) {
-            builder.removeItem(R.id.chat_room_participants_devices)
-            builder.removeItem(R.id.chat_room_ephemeral_messages)
-        }
-
-        builder.setCallback(object : MenuBuilder.Callback {
-            override fun onMenuModeChange(menu: MenuBuilder) {}
-
-            override fun onMenuItemSelected(menu: MenuBuilder, item: MenuItem): Boolean {
-                return when (item.itemId) {
-                    R.id.chat_room_group_info -> {
-                        showGroupInfo(chatRoom)
-                        true
+            if (viewModel.ephemeralChatRoom) {
+                if (chatRoom.currentParams.ephemeralMode == ChatRoomEphemeralMode.AdminManaged) {
+                    if (chatRoom.me?.isAdmin == false) {
+                        Log.w("[Chat Room] Hiding ephemeral menu as mode is admin managed and we aren't admin")
+                        popupView.ephemeralHidden = true
+                        totalSize -= itemSize
                     }
-                    R.id.chat_room_participants_devices -> {
-                        showParticipantsDevices()
-                        true
-                    }
-                    R.id.chat_room_ephemeral_messages -> {
-                        showEphemeralMessages()
-                        true
-                    }
-                    R.id.chat_room_delete_messages -> {
-                        enterEditionMode()
-                        true
-                    }
-                    else -> false
                 }
             }
-        })
+        }
 
-        popupMenu.show()
+        // When using WRAP_CONTENT instead of real size, fails to place the
+        // popup window above if not enough space is available below
+        val popupWindow = PopupWindow(
+            popupView.root,
+            AppUtils.getDimension(R.dimen.chat_room_popup_width).toInt(),
+            totalSize,
+            true
+        )
+        // Elevation is for showing a shadow around the popup
+        popupWindow.elevation = 20f
+
+        popupView.setGroupInfoListener {
+            showGroupInfo(chatRoom)
+            popupWindow.dismiss()
+        }
+        popupView.setDevicesListener {
+            showParticipantsDevices()
+            popupWindow.dismiss()
+        }
+        popupView.setEphemeralListener {
+            showEphemeralMessages()
+            popupWindow.dismiss()
+        }
+        popupView.setEditionModeListener {
+            enterEditionMode()
+            popupWindow.dismiss()
+        }
+
+        popupWindow.showAsDropDown(binding.menu, 0, 0, Gravity.BOTTOM)
     }
 
     private fun scrollToBottom() {
@@ -617,17 +716,15 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
     }
 
     private fun pickFile() {
-        val cameraIntents = ArrayList<Intent>()
+        val intentsList = ArrayList<Intent>()
 
-        // Handles image & video picking
-        val galleryIntent = Intent(Intent.ACTION_PICK)
-        galleryIntent.type = "*/*"
-        galleryIntent.putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-        galleryIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        val pickerIntent = Intent(Intent.ACTION_GET_CONTENT)
+        pickerIntent.type = "*/*"
+        pickerIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
 
         if (PermissionHelper.get().hasCameraPermission()) {
             // Allows to capture directly from the camera
-            val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            val capturePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             val tempFileName = System.currentTimeMillis().toString() + ".jpeg"
             val file = FileUtils.getFileStoragePath(tempFileName)
             chatSendingViewModel.temporaryFileUploadPath = file
@@ -636,25 +733,20 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
                 requireContext().getString(R.string.file_provider),
                 file
             )
-            captureIntent.putExtra(MediaStore.EXTRA_OUTPUT, publicUri)
-            captureIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            captureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            cameraIntents.add(captureIntent)
-        }
+            capturePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, publicUri)
+            capturePictureIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            capturePictureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            intentsList.add(capturePictureIntent)
 
-        if (PermissionHelper.get().hasReadExternalStorage()) {
-            // Finally allow any kind of file
-            val fileIntent = Intent(Intent.ACTION_GET_CONTENT)
-            fileIntent.type = "*/*"
-            fileIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            cameraIntents.add(fileIntent)
+            val captureVideoIntent = Intent(MediaStore.ACTION_VIDEO_CAPTURE)
+            intentsList.add(captureVideoIntent)
         }
 
         val chooserIntent =
-            Intent.createChooser(galleryIntent, getString(R.string.chat_message_pick_file_dialog))
+            Intent.createChooser(pickerIntent, getString(R.string.chat_message_pick_file_dialog))
         chooserIntent.putExtra(
             Intent.EXTRA_INITIAL_INTENTS,
-            cameraIntents.toArray(arrayOf<Parcelable>())
+            intentsList.toArray(arrayOf<Parcelable>())
         )
 
         startActivityForResult(chooserIntent, 0)
@@ -686,25 +778,31 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
         )
         val dialog = DialogUtils.getDialog(requireContext(), dialogViewModel)
 
-        dialogViewModel.showDeleteButton({
-            dialog.dismiss()
-            lifecycleScope.launch {
-                val plainFilePath = content.plainFilePath
-                Log.i("[Cht Room] Making a copy of [$plainFilePath] to the cache directory before exporting it")
-                val cacheCopyPath = FileUtils.copyFileToCache(plainFilePath)
-                if (cacheCopyPath != null) {
-                    Log.i("[Cht Room] Cache copy has been made: $cacheCopyPath")
-                    if (!FileUtils.openFileInThirdPartyApp(requireActivity(), cacheCopyPath)) {
-                        showDialogToSuggestOpeningFileAsText()
+        dialogViewModel.showDeleteButton(
+            {
+                dialog.dismiss()
+                lifecycleScope.launch {
+                    val plainFilePath = content.plainFilePath
+                    Log.i("[Cht Room] Making a copy of [$plainFilePath] to the cache directory before exporting it")
+                    val cacheCopyPath = FileUtils.copyFileToCache(plainFilePath)
+                    if (cacheCopyPath != null) {
+                        Log.i("[Cht Room] Cache copy has been made: $cacheCopyPath")
+                        if (!FileUtils.openFileInThirdPartyApp(requireActivity(), cacheCopyPath)) {
+                            showDialogToSuggestOpeningFileAsText()
+                        }
                     }
                 }
-            }
-        }, getString(R.string.chat_message_cant_open_file_in_app_dialog_export_button))
+            },
+            getString(R.string.chat_message_cant_open_file_in_app_dialog_export_button)
+        )
 
-        dialogViewModel.showOkButton({
-            dialog.dismiss()
-            navigateToTextFileViewer(true)
-        }, getString(R.string.chat_message_cant_open_file_in_app_dialog_open_as_text_button))
+        dialogViewModel.showOkButton(
+            {
+                dialog.dismiss()
+                navigateToTextFileViewer(true)
+            },
+            getString(R.string.chat_message_cant_open_file_in_app_dialog_open_as_text_button)
+        )
 
         dialogViewModel.showCancelButton {
             dialog.dismiss()

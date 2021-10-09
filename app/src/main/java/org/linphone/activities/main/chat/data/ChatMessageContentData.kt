@@ -30,7 +30,6 @@ import androidx.media.AudioFocusRequestCompat
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.ticker
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -41,7 +40,6 @@ import org.linphone.core.tools.Log
 import org.linphone.utils.AppUtils
 import org.linphone.utils.FileUtils
 import org.linphone.utils.ImageUtils
-import java.lang.Exception
 
 class ChatMessageContentData(
     private val chatMessage: ChatMessage,
@@ -49,7 +47,7 @@ class ChatMessageContentData(
 
 ) {
     var listener: OnContentClickedListener? = null
-    
+
     val isOutgoing = chatMessage.isOutgoing
 
     val isImage = MutableLiveData<Boolean>()
@@ -74,7 +72,7 @@ class ChatMessageContentData(
     val formattedDuration = MutableLiveData<String>()
     val voiceRecordPlayingPosition = MutableLiveData<Int>()
     val isVoiceRecordPlaying = MutableLiveData<Boolean>()
-    var voiceRecordPlayingAudioFocusRequest: AudioFocusRequestCompat? = null
+    var voiceRecordAudioFocusRequest: AudioFocusRequestCompat? = null
 
     val isAlone: Boolean
         get() {
@@ -210,13 +208,13 @@ class ChatMessageContentData(
                 val isVoiceRecord = content.isVoiceRecording
                 filePath.value = path
                 isImage.value = FileUtils.isExtensionImage(path)
-                isVideo.value = FileUtils.isExtensionVideo(path)
+                isVideo.value = FileUtils.isExtensionVideo(path) && !isVoiceRecord
                 isAudio.value = FileUtils.isExtensionAudio(path) && !isVoiceRecord
                 isPdf.value = FileUtils.isExtensionPdf(path)
                 isVoiceRecording.value = isVoiceRecord
 
                 if (isVoiceRecord) {
-                    val duration = content.fileDuration// duration is in ms
+                    val duration = content.fileDuration // duration is in ms
                     voiceRecordDuration.value = duration
                     formattedDuration.value = SimpleDateFormat("mm:ss", Locale.getDefault()).format(duration)
                     Log.i("[Voice Recording] Duration is ${voiceRecordDuration.value} ($duration)")
@@ -259,8 +257,12 @@ class ChatMessageContentData(
             initVoiceRecordPlayer()
         }
 
-        if (voiceRecordPlayingAudioFocusRequest == null) {
-            voiceRecordPlayingAudioFocusRequest = AppUtils.acquireAudioFocusForVoiceRecording(
+        if (AppUtils.isMediaVolumeLow(coreContext.context)) {
+            Toast.makeText(coreContext.context, R.string.chat_message_voice_recording_playback_low_volume, Toast.LENGTH_LONG).show()
+        }
+
+        if (voiceRecordAudioFocusRequest == null) {
+            voiceRecordAudioFocusRequest = AppUtils.acquireAudioFocusForVoiceRecordingOrPlayback(
                 coreContext.context
             )
         }
@@ -277,10 +279,10 @@ class ChatMessageContentData(
             voiceRecordingPlayer.pause()
         }
 
-        val request = voiceRecordPlayingAudioFocusRequest
+        val request = voiceRecordAudioFocusRequest
         if (request != null) {
-            AppUtils.releaseAudioFocusForVoiceRecording(coreContext.context, request)
-            voiceRecordPlayingAudioFocusRequest = null
+            AppUtils.releaseAudioFocusForVoiceRecordingOrPlayback(coreContext.context, request)
+            voiceRecordAudioFocusRequest = null
         }
 
         isVoiceRecordPlaying.value = false
@@ -309,10 +311,6 @@ class ChatMessageContentData(
             }
         }
         Log.i("[Voice Recording] Found speaker sound card [$speakerCard] and earpiece sound card [$earpieceCard]")
-
-        if (AppUtils.isMediaVolumeLow(coreContext.context)) {
-            Toast.makeText(coreContext.context, R.string.chat_message_voice_recording_playback_low_volume, Toast.LENGTH_LONG).show()
-        }
 
         val localPlayer = coreContext.core.createLocalPlayer(speakerCard ?: earpieceCard, null, null)
         if (localPlayer != null) {

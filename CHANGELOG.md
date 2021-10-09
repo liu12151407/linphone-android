@@ -10,6 +10,59 @@ Group changes to describe their impact on the project, as follows:
     Fixed for any bug fixes.
     Security to invite users to upgrade in case of vulnerabilities.
 
+## [4.6.0] - Unreleased
+
+### Added
+- Reply to chat message feature (with original message preview)
+- Voice recordings in chat feature
+- Allow video recording in chat file sharing
+- Notify incoming/outgoing calls on bluetooth devices using self-managed connections from telecom manager API
+- New video call UI on foldable device like Galaxy Z Fold
+- Setting to automatically record all calls
+
+### Changed
+- UI has been reworked around SlidingPane component to better handle tablets & foldable devices
+- Animations have been replaced to use com.google.android.material.transition ones
+- Using new [Unified Content API](https://developer.android.com/about/versions/12/features/unified-content-api) to share files from keyboard (or other sources)
+- Bumped dependencies, gradle updated from 4.2.2 to 7.0.2
+- Target Android SDK version set to 31 (Android	12)
+- SDK updated to 5.1.0 release
+
+### Fixed
+- Chat notifications disappearing when app restarts
+- "Infinite backstack", now each view is stored once (at most) in the backstack
+
+### Removed
+- Global push notification setting in Network, use the switch in each Account instead
+
+## [4.5.3] - 2021-10-04
+
+### Added
+- Russian translation
+
+### Changed
+- SDK updated to 5.0.31
+
+### Fixed
+- AccountSettingsViewModel leak causing number of REGISTER to grow
+
+## [4.5.2] - 2021-08-27
+
+### Added
+- Added a contact cache at app level
+- Glide cache cleared on low memory
+
+### Changed
+- Fixed encrypted file export when VFS is enabled
+- Fixed in-app video player size when VFS is enabled
+- Fixed background mode setting
+- Fixed proximity sensor during calls
+- Fixed missing notification for missed call when call history view is active
+- Fixed shortcuts on launcher
+- Fixed a few memory leaks
+- Fixed various crashes & other issues
+- SDK bumped to 5.0.10
+
 ## [4.5.1] - Unreleased
 
 ### Added
