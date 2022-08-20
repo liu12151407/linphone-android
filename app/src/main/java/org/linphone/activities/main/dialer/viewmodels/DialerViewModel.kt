@@ -21,7 +21,6 @@ package org.linphone.activities.main.dialer.viewmodels
 
 import android.content.Context
 import android.os.Vibrator
-import android.provider.Settings
 import android.text.Editable
 import android.widget.EditText
 import androidx.lifecycle.MutableLiveData
@@ -48,6 +47,8 @@ class DialerViewModel : LogsUploadViewModel() {
 
     val autoInitiateVideoCalls = MutableLiveData<Boolean>()
 
+    val scheduleConferenceAvailable = MutableLiveData<Boolean>()
+
     val updateAvailableEvent: MutableLiveData<Event<String>> by lazy {
         MutableLiveData<Event<String>>()
     }
@@ -69,23 +70,8 @@ class DialerViewModel : LogsUploadViewModel() {
             }
             enteredUri.value = sb.toString()
 
-            if (coreContext.core.callsNb == 0) {
-                val contentResolver = coreContext.context.contentResolver
-                try {
-                    if (Settings.System.getInt(
-                            contentResolver,
-                            Settings.System.DTMF_TONE_WHEN_DIALING
-                        ) == 1
-                    ) {
-                        coreContext.core.playDtmf(key, 1)
-
-                        if (vibrator.hasVibrator() && corePreferences.dtmfKeypadVibration) {
-                            Compatibility.eventVibration(vibrator)
-                        }
-                    }
-                } catch (snfe: Settings.SettingNotFoundException) {
-                    Log.e("[Dialer] Can't play DTMF: $snfe")
-                }
+            if (vibrator.hasVibrator() && corePreferences.dtmfKeypadVibration) {
+                Compatibility.eventVibration(vibrator)
             }
         }
 
@@ -152,6 +138,7 @@ class DialerViewModel : LogsUploadViewModel() {
         transferVisibility.value = false
 
         showSwitchCamera.value = coreContext.showSwitchCameraButton()
+        scheduleConferenceAvailable.value = LinphoneUtils.isRemoteConferencingAvailable()
     }
 
     override fun onCleared() {
@@ -176,7 +163,7 @@ class DialerViewModel : LogsUploadViewModel() {
     fun updateShowVideoPreview() {
         val videoPreview = corePreferences.videoPreview
         showPreview.value = videoPreview
-        coreContext.core.enableVideoPreview(videoPreview)
+        coreContext.core.isVideoPreviewEnabled = videoPreview
     }
 
     fun eraseLastChar() {
@@ -208,13 +195,21 @@ class DialerViewModel : LogsUploadViewModel() {
         }
     }
 
-    fun transferCall() {
+    fun transferCall(): Boolean {
         val addressToCall = enteredUri.value.orEmpty()
-        if (addressToCall.isNotEmpty()) {
-            coreContext.transferCallTo(addressToCall)
+        return if (addressToCall.isNotEmpty()) {
+            onMessageToNotifyEvent.value = Event(
+                if (coreContext.transferCallTo(addressToCall)) {
+                    org.linphone.R.string.dialer_transfer_succeded
+                } else {
+                    org.linphone.R.string.dialer_transfer_failed
+                }
+            )
             eraseAll()
+            true
         } else {
             setLastOutgoingCallAddress()
+            false
         }
     }
 

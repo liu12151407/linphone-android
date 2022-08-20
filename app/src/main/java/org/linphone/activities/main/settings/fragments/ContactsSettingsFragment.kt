@@ -26,13 +26,13 @@ import androidx.lifecycle.ViewModelProvider
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
+import org.linphone.activities.main.settings.SettingListenerStub
 import org.linphone.activities.main.settings.viewmodels.ContactsSettingsViewModel
-import org.linphone.activities.navigateToEmptySetting
-import org.linphone.compatibility.Compatibility
+import org.linphone.activities.navigateToLdapSettings
 import org.linphone.core.tools.Log
 import org.linphone.databinding.SettingsContactsFragmentBinding
-import org.linphone.utils.Event
 import org.linphone.utils.PermissionHelper
+import org.linphone.utils.ShortcutsHelper
 
 class ContactsSettingsFragment : GenericSettingFragment<SettingsContactsFragmentBinding>() {
     private lateinit var viewModel: ContactsSettingsViewModel
@@ -45,36 +45,48 @@ class ContactsSettingsFragment : GenericSettingFragment<SettingsContactsFragment
         binding.lifecycleOwner = viewLifecycleOwner
         binding.sharedMainViewModel = sharedViewModel
 
-        viewModel = ViewModelProvider(this).get(ContactsSettingsViewModel::class.java)
+        viewModel = ViewModelProvider(this)[ContactsSettingsViewModel::class.java]
         binding.viewModel = viewModel
 
-        binding.setBackClickListener { goBack() }
-
         viewModel.launcherShortcutsEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { newValue ->
-                    if (newValue) {
-                        Compatibility.createShortcutsToContacts(requireContext())
-                    } else {
-                        Compatibility.removeShortcuts(requireContext())
-                        if (corePreferences.chatRoomShortcuts) {
-                            Compatibility.createShortcutsToChatRooms(requireContext())
-                        }
+            viewLifecycleOwner
+        ) {
+            it.consume { newValue ->
+                if (newValue) {
+                    ShortcutsHelper.createShortcutsToContacts(requireContext())
+                } else {
+                    ShortcutsHelper.removeShortcuts(requireContext())
+                    if (corePreferences.chatRoomShortcuts) {
+                        ShortcutsHelper.createShortcutsToChatRooms(requireContext())
                     }
                 }
             }
-        )
+        }
 
         viewModel.askWriteContactsPermissionForPresenceStorageEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    Log.i("[Contacts Settings] Asking for WRITE_CONTACTS permission to be able to store presence")
-                    requestPermissions(arrayOf(android.Manifest.permission.WRITE_CONTACTS), 1)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                Log.i("[Contacts Settings] Asking for WRITE_CONTACTS permission to be able to store presence")
+                requestPermissions(arrayOf(android.Manifest.permission.WRITE_CONTACTS), 1)
             }
-        )
+        }
+
+        viewModel.ldapNewSettingsListener = object : SettingListenerStub() {
+            override fun onClicked() {
+                Log.i("[Contacts Settings] Clicked on new LDAP config")
+                navigateToLdapSettings(-1)
+            }
+        }
+
+        viewModel.ldapSettingsClickedEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { index ->
+                Log.i("[Contacts Settings] Clicked on LDAP config with index: $index")
+                navigateToLdapSettings(index)
+            }
+        }
 
         if (!PermissionHelper.required(requireContext()).hasReadContactsPermission()) {
             Log.i("[Contacts Settings] Asking for READ_CONTACTS permission")
@@ -93,8 +105,7 @@ class ContactsSettingsFragment : GenericSettingFragment<SettingsContactsFragment
                 if (granted) {
                     Log.i("[Contacts Settings] READ_CONTACTS permission granted")
                     viewModel.readContactsPermissionGranted.value = true
-                    coreContext.contactsManager.onReadContactsPermissionGranted()
-                    coreContext.contactsManager.fetchContactsAsync()
+                    coreContext.fetchContacts()
                 } else {
                     Log.w("[Contacts Settings] READ_CONTACTS permission denied")
                 }
@@ -104,7 +115,6 @@ class ContactsSettingsFragment : GenericSettingFragment<SettingsContactsFragment
                 if (granted) {
                     Log.i("[Contacts Settings] WRITE_CONTACTS permission granted")
                     corePreferences.storePresenceInNativeContact = true
-                    coreContext.contactsManager.storePresenceInformationForAllContacts()
                 } else {
                     Log.w("[Contacts Settings] WRITE_CONTACTS permission denied")
                 }
@@ -112,11 +122,8 @@ class ContactsSettingsFragment : GenericSettingFragment<SettingsContactsFragment
         }
     }
 
-    override fun goBack() {
-        if (sharedViewModel.isSlidingPaneSlideable.value == true) {
-            sharedViewModel.closeSlidingPaneEvent.value = Event(true)
-        } else {
-            navigateToEmptySetting()
-        }
+    override fun onResume() {
+        super.onResume()
+        viewModel.updateLdapConfigurationsList()
     }
 }

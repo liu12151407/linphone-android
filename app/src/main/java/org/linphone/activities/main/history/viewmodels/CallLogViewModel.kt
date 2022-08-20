@@ -20,30 +20,22 @@
 package org.linphone.activities.main.history.viewmodels
 
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.collections.ArrayList
+import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
+import org.linphone.activities.main.conference.data.ConferenceSchedulingParticipantData
 import org.linphone.contact.GenericContactViewModel
 import org.linphone.core.*
 import org.linphone.core.tools.Log
+import org.linphone.utils.AppUtils
 import org.linphone.utils.Event
 import org.linphone.utils.LinphoneUtils
 import org.linphone.utils.TimestampUtils
 
-class CallLogViewModelFactory(private val callLog: CallLog) :
-    ViewModelProvider.NewInstanceFactory() {
-
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
-        return CallLogViewModel(callLog) as T
-    }
-}
-
-class CallLogViewModel(val callLog: CallLog) : GenericContactViewModel(callLog.remoteAddress) {
+class CallLogViewModel(val callLog: CallLog, private val isRelated: Boolean = false) : GenericContactViewModel(callLog.remoteAddress) {
     val peerSipUri: String by lazy {
         LinphoneUtils.getDisplayableAddress(callLog.remoteAddress)
     }
@@ -107,9 +99,29 @@ class CallLogViewModel(val callLog: CallLog) : GenericContactViewModel(callLog.r
 
     val chatAllowed = !corePreferences.disableChat
 
-    val secureChatAllowed = contact.value?.friend?.getPresenceModelForUriOrTel(peerSipUri)?.hasCapability(FriendCapability.LimeX3Dh) ?: false
+    val secureChatAllowed = LinphoneUtils.isLimeAvailable() && (contact.value?.getPresenceModelForUriOrTel(peerSipUri)?.hasCapability(FriendCapability.LimeX3Dh) ?: false)
 
-    val relatedCallLogs = MutableLiveData<ArrayList<CallLog>>()
+    val relatedCallLogs = MutableLiveData<ArrayList<CallLogViewModel>>()
+
+    private val listener = object : CoreListenerStub() {
+        override fun onCallLogUpdated(core: Core, log: CallLog) {
+            if (callLog.remoteAddress.weakEqual(log.remoteAddress) && callLog.localAddress.weakEqual(log.localAddress)) {
+                Log.i("[History Detail] New call log for ${callLog.remoteAddress.asStringUriOnly()} with local address ${callLog.localAddress.asStringUriOnly()}")
+                addRelatedCallLogs(arrayListOf(log))
+            }
+        }
+    }
+
+    val isConferenceCallLog = callLog.wasConference()
+
+    val conferenceSubject = callLog.conferenceInfo?.subject
+    val conferenceParticipantsData = MutableLiveData<ArrayList<ConferenceSchedulingParticipantData>>()
+    val organizerParticipantData = MutableLiveData<ConferenceSchedulingParticipantData>()
+    val conferenceTime = MutableLiveData<String>()
+    val conferenceDate = MutableLiveData<String>()
+
+    override val showGroupChatAvatar: Boolean
+        get() = isConferenceCallLog
 
     private val chatRoomListener = object : ChatRoomListenerStub() {
         override fun onStateChanged(chatRoom: ChatRoom, state: ChatRoom.State) {
@@ -119,13 +131,40 @@ class CallLogViewModel(val callLog: CallLog) : GenericContactViewModel(callLog.r
             } else if (state == ChatRoom.State.CreationFailed) {
                 Log.e("[History Detail] Group chat room creation has failed !")
                 waitForChatRoomCreation.value = false
-                onErrorEvent.value = Event(R.string.chat_room_creation_failed_snack)
+                onMessageToNotifyEvent.value = Event(R.string.chat_room_creation_failed_snack)
             }
         }
     }
 
     init {
         waitForChatRoomCreation.value = false
+
+        if (!isRelated) {
+            val conferenceInfo = callLog.conferenceInfo
+            if (conferenceInfo != null) {
+                conferenceTime.value = TimestampUtils.timeToString(conferenceInfo.dateTime)
+                conferenceDate.value = if (TimestampUtils.isToday(conferenceInfo.dateTime)) {
+                    AppUtils.getString(R.string.today)
+                } else {
+                    TimestampUtils.toString(
+                        conferenceInfo.dateTime,
+                        onlyDate = true,
+                        shortDate = false,
+                        hideYear = false
+                    )
+                }
+                val organizer = conferenceInfo.organizer
+                if (organizer != null) {
+                    organizerParticipantData.value =
+                        ConferenceSchedulingParticipantData(organizer, showLimeBadge = false, showDivider = false)
+                }
+                val list = arrayListOf<ConferenceSchedulingParticipantData>()
+                for (participant in conferenceInfo.participants) {
+                    list.add(ConferenceSchedulingParticipantData(participant, showLimeBadge = false, showDivider = true))
+                }
+                conferenceParticipantsData.value = list
+            }
+        }
     }
 
     override fun onCleared() {
@@ -134,6 +173,12 @@ class CallLogViewModel(val callLog: CallLog) : GenericContactViewModel(callLog.r
     }
 
     fun destroy() {
+        if (!isRelated) {
+            relatedCallLogs.value.orEmpty().forEach(CallLogViewModel::destroy)
+            organizerParticipantData.value?.destroy()
+            conferenceParticipantsData.value.orEmpty()
+                .forEach(ConferenceSchedulingParticipantData::destroy)
+        }
     }
 
     fun startCall() {
@@ -143,8 +188,11 @@ class CallLogViewModel(val callLog: CallLog) : GenericContactViewModel(callLog.r
     fun startChat(isSecured: Boolean) {
         waitForChatRoomCreation.value = true
         val chatRoom = LinphoneUtils.createOneToOneChatRoom(callLog.remoteAddress, isSecured)
+
         if (chatRoom != null) {
-            if (chatRoom.state == ChatRoom.State.Created) {
+            val state = chatRoom.state
+            Log.i("[History Detail] Found existing chat room in state $state")
+            if (state == ChatRoom.State.Created || state == ChatRoom.State.Terminated) {
                 waitForChatRoomCreation.value = false
                 chatRoomCreatedEvent.value = Event(chatRoom)
             } else {
@@ -153,15 +201,27 @@ class CallLogViewModel(val callLog: CallLog) : GenericContactViewModel(callLog.r
         } else {
             waitForChatRoomCreation.value = false
             Log.e("[History Detail] Couldn't create chat room with address ${callLog.remoteAddress}")
-            onErrorEvent.value = Event(R.string.chat_room_creation_failed_snack)
+            onMessageToNotifyEvent.value = Event(R.string.chat_room_creation_failed_snack)
         }
     }
 
-    fun getCallsHistory(): ArrayList<CallLogViewModel> {
-        val callsHistory = ArrayList<CallLogViewModel>()
-        for (callLog in relatedCallLogs.value.orEmpty()) {
-            callsHistory.add(CallLogViewModel(callLog))
+    fun addRelatedCallLogs(callLogs: ArrayList<CallLog>) {
+        val list = arrayListOf<CallLogViewModel>()
+
+        // We assume new logs are more recent than the ones we already have, so we add them first
+        for (callLog in callLogs) {
+            list.add(CallLogViewModel(callLog, true))
         }
-        return callsHistory
+        list.addAll(relatedCallLogs.value.orEmpty())
+
+        relatedCallLogs.value = list
+    }
+
+    fun enableListener(enable: Boolean) {
+        if (enable) {
+            coreContext.core.addListener(listener)
+        } else {
+            coreContext.core.removeListener(listener)
+        }
     }
 }

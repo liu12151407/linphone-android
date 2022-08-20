@@ -29,7 +29,6 @@ import org.linphone.activities.main.chat.adapters.ImdnAdapter
 import org.linphone.activities.main.chat.viewmodels.ImdnViewModel
 import org.linphone.activities.main.chat.viewmodels.ImdnViewModelFactory
 import org.linphone.activities.main.fragments.SecureFragment
-import org.linphone.activities.main.viewmodels.SharedMainViewModel
 import org.linphone.core.tools.Log
 import org.linphone.databinding.ChatRoomImdnFragmentBinding
 import org.linphone.utils.AppUtils
@@ -38,7 +37,6 @@ import org.linphone.utils.RecyclerViewHeaderDecoration
 class ImdnFragment : SecureFragment<ChatRoomImdnFragmentBinding>() {
     private lateinit var viewModel: ImdnViewModel
     private lateinit var adapter: ImdnAdapter
-    private lateinit var sharedViewModel: SharedMainViewModel
 
     override fun getLayoutId(): Int {
         return R.layout.chat_room_imdn_fragment
@@ -49,19 +47,14 @@ class ImdnFragment : SecureFragment<ChatRoomImdnFragmentBinding>() {
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedMainViewModel::class.java)
-        }
-
         val chatRoom = sharedViewModel.selectedChatRoom.value
         if (chatRoom == null) {
             Log.e("[IMDN] Chat room is null, aborting!")
-            // (activity as MainActivity).showSnackBar(R.string.error)
             findNavController().navigateUp()
             return
         }
 
-        isSecure = chatRoom.currentParams.encryptionEnabled()
+        isSecure = chatRoom.currentParams.isEncryptionEnabled
 
         if (arguments != null) {
             val messageId = arguments?.getString("MessageId")
@@ -87,7 +80,7 @@ class ImdnFragment : SecureFragment<ChatRoomImdnFragmentBinding>() {
         adapter = ImdnAdapter(viewLifecycleOwner)
         binding.participantsList.adapter = adapter
 
-        val layoutManager = LinearLayoutManager(activity)
+        val layoutManager = LinearLayoutManager(requireContext())
         binding.participantsList.layoutManager = layoutManager
 
         // Divider between items
@@ -98,14 +91,9 @@ class ImdnFragment : SecureFragment<ChatRoomImdnFragmentBinding>() {
         binding.participantsList.addItemDecoration(headerItemDecoration)
 
         viewModel.participants.observe(
-            viewLifecycleOwner,
-            {
-                adapter.submitList(it)
-            }
-        )
-
-        binding.setBackClickListener {
-            goBack()
+            viewLifecycleOwner
+        ) {
+            adapter.submitList(it)
         }
     }
 }

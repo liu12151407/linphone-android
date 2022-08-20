@@ -23,28 +23,23 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.ViewModelProvider
-import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
-import org.linphone.LinphoneApplication
+import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
 import org.linphone.activities.main.MainActivity
-import org.linphone.activities.main.chat.adapters.ChatRoomCreationContactsAdapter
 import org.linphone.activities.main.chat.viewmodels.ChatRoomCreationViewModel
 import org.linphone.activities.main.fragments.SecureFragment
-import org.linphone.activities.main.viewmodels.SharedMainViewModel
 import org.linphone.activities.navigateToChatRoom
-import org.linphone.activities.navigateToEmptyChatRoom
 import org.linphone.activities.navigateToGroupInfo
+import org.linphone.contact.ContactsSelectionAdapter
 import org.linphone.core.tools.Log
 import org.linphone.databinding.ChatRoomCreationFragmentBinding
 import org.linphone.utils.AppUtils
-import org.linphone.utils.Event
 import org.linphone.utils.PermissionHelper
 
 class ChatRoomCreationFragment : SecureFragment<ChatRoomCreationFragmentBinding>() {
     private lateinit var viewModel: ChatRoomCreationViewModel
-    private lateinit var sharedViewModel: SharedMainViewModel
-    private lateinit var adapter: ChatRoomCreationContactsAdapter
+    private lateinit var adapter: ContactsSelectionAdapter
 
     override fun getLayoutId(): Int = R.layout.chat_room_creation_fragment
 
@@ -53,35 +48,28 @@ class ChatRoomCreationFragment : SecureFragment<ChatRoomCreationFragmentBinding>
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedMainViewModel::class.java)
-        }
-
         useMaterialSharedAxisXForwardAnimation = sharedViewModel.isSlidingPaneSlideable.value == false
 
         val createGroup = arguments?.getBoolean("createGroup") ?: false
 
-        viewModel = ViewModelProvider(this).get(ChatRoomCreationViewModel::class.java)
+        viewModel = ViewModelProvider(this)[ChatRoomCreationViewModel::class.java]
         viewModel.createGroupChat.value = createGroup
 
         viewModel.isEncrypted.value = sharedViewModel.createEncryptedChatRoom
 
         binding.viewModel = viewModel
 
-        adapter = ChatRoomCreationContactsAdapter(viewLifecycleOwner)
-        adapter.groupChatEnabled = viewModel.createGroupChat.value == true
-        adapter.updateSecurity(viewModel.isEncrypted.value == true)
+        adapter = ContactsSelectionAdapter(viewLifecycleOwner)
+        adapter.setGroupChatCapabilityRequired(viewModel.createGroupChat.value == true)
+        adapter.setLimeCapabilityRequired(viewModel.isEncrypted.value == true)
         binding.contactsList.adapter = adapter
 
-        val layoutManager = LinearLayoutManager(activity)
+        val layoutManager = LinearLayoutManager(requireContext())
         binding.contactsList.layoutManager = layoutManager
 
         // Divider between items
         binding.contactsList.addItemDecoration(AppUtils.getDividerDecoration(requireContext(), layoutManager))
 
-        binding.setBackClickListener {
-            goBack()
-        }
         binding.back.visibility = if (resources.getBoolean(R.bool.isTablet)) View.INVISIBLE else View.VISIBLE
 
         binding.setAllContactsToggleClickListener {
@@ -93,62 +81,55 @@ class ChatRoomCreationFragment : SecureFragment<ChatRoomCreationFragmentBinding>
         }
 
         viewModel.contactsList.observe(
-            viewLifecycleOwner,
-            {
-                adapter.submitList(it)
-            }
-        )
+            viewLifecycleOwner
+        ) {
+            adapter.submitList(it)
+        }
 
         viewModel.isEncrypted.observe(
-            viewLifecycleOwner,
-            {
-                adapter.updateSecurity(it)
-            }
-        )
+            viewLifecycleOwner
+        ) {
+            adapter.setLimeCapabilityRequired(it)
+        }
 
         viewModel.sipContactsSelected.observe(
-            viewLifecycleOwner,
-            {
-                viewModel.updateContactsList()
-            }
-        )
+            viewLifecycleOwner
+        ) {
+            viewModel.applyFilter()
+        }
 
         viewModel.selectedAddresses.observe(
-            viewLifecycleOwner,
-            {
-                adapter.updateSelectedAddresses(it)
-            }
-        )
+            viewLifecycleOwner
+        ) {
+            adapter.updateSelectedAddresses(it)
+        }
 
         viewModel.chatRoomCreatedEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { chatRoom ->
-                    sharedViewModel.selectedChatRoom.value = chatRoom
-                    navigateToChatRoom(AppUtils.createBundleWithSharedTextAndFiles(sharedViewModel))
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { chatRoom ->
+                sharedViewModel.selectedChatRoom.value = chatRoom
+                navigateToChatRoom(AppUtils.createBundleWithSharedTextAndFiles(sharedViewModel))
             }
-        )
+        }
 
         viewModel.filter.observe(
-            viewLifecycleOwner,
-            {
-                viewModel.applyFilter()
-            }
-        )
+            viewLifecycleOwner
+        ) {
+            viewModel.applyFilter()
+        }
 
         adapter.selectedContact.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { searchResult ->
-                    if (createGroup) {
-                        viewModel.toggleSelectionForSearchResult(searchResult)
-                    } else {
-                        viewModel.createOneToOneChat(searchResult)
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume { searchResult ->
+                if (createGroup) {
+                    viewModel.toggleSelectionForSearchResult(searchResult)
+                } else {
+                    viewModel.createOneToOneChat(searchResult)
                 }
             }
-        )
+        }
 
         addParticipantsFromSharedViewModel()
 
@@ -159,28 +140,17 @@ class ChatRoomCreationFragment : SecureFragment<ChatRoomCreationFragmentBinding>
             navigateToGroupInfo()
         }
 
-        viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { messageResourceId ->
-                    (activity as MainActivity).showSnackBar(messageResourceId)
-                }
+        viewModel.onMessageToNotifyEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { messageResourceId ->
+                (activity as MainActivity).showSnackBar(messageResourceId)
             }
-        )
+        }
 
         if (!PermissionHelper.get().hasReadContactsPermission()) {
             Log.i("[Chat Room Creation] Asking for READ_CONTACTS permission")
             requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 0)
-        }
-    }
-
-    override fun goBack() {
-        if (!findNavController().popBackStack()) {
-            if (sharedViewModel.isSlidingPaneSlideable.value == true) {
-                sharedViewModel.closeSlidingPaneEvent.value = Event(true)
-            } else {
-                navigateToEmptyChatRoom()
-            }
         }
     }
 
@@ -193,8 +163,7 @@ class ChatRoomCreationFragment : SecureFragment<ChatRoomCreationFragmentBinding>
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             if (granted) {
                 Log.i("[Chat Room Creation] READ_CONTACTS permission granted")
-                LinphoneApplication.coreContext.contactsManager.onReadContactsPermissionGranted()
-                LinphoneApplication.coreContext.contactsManager.fetchContactsAsync()
+                coreContext.fetchContacts()
             } else {
                 Log.w("[Chat Room Creation] READ_CONTACTS permission denied")
             }

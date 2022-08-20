@@ -36,7 +36,7 @@ class AccountSettingsViewModelFactory(private val identity: String) :
     ViewModelProvider.NewInstanceFactory() {
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
         for (account in coreContext.core.accountList) {
             if (account.params.identityAddress?.asStringUriOnly() == identity) {
                 return AccountSettingsViewModel(account) as T
@@ -70,6 +70,10 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
         MutableLiveData<Event<Boolean>>()
     }
 
+    val accountDefaultEvent: MutableLiveData<Event<Boolean>> by lazy {
+        MutableLiveData<Event<Boolean>>()
+    }
+
     val displayUsernameInsteadOfIdentity = corePreferences.replaceSipUriByUsername
 
     private var accountToDelete: Account? = null
@@ -100,11 +104,21 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
             val params = account.params.clone()
             val identity = params.identityAddress
             if (identity != null) {
-                identity.username = newValue
-                params.identityAddress = identity
+                val newIdentityAddress = identity.clone()
+                newIdentityAddress.username = newValue
+                params.identityAddress = newIdentityAddress
                 account.params = params
             } else {
                 Log.e("[Account Settings] Account doesn't have an identity yet")
+
+                val domain = params.domain
+                val newIdentityAddress = Factory.instance().createAddress("sip:$newValue@$domain")
+                if (newIdentityAddress != null) {
+                    params.identityAddress = newIdentityAddress
+                    account.params = params
+                } else {
+                    Log.e("[Account Settings] Failed to create identity address sip:$newValue@$domain")
+                }
             }
         }
     }
@@ -192,7 +206,7 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
     val disableListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
             val params = account.params.clone()
-            params.registerEnabled = !newValue
+            params.isRegisterEnabled = !newValue
             account.params = params
         }
     }
@@ -202,6 +216,7 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
         override fun onBoolValueChanged(newValue: Boolean) {
             if (newValue) {
                 core.defaultAccount = account
+                accountDefaultEvent.value = Event(true)
             }
         }
     }
@@ -239,7 +254,7 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
             }
 
             val params = account.params.clone()
-            params.registerEnabled = false
+            params.isRegisterEnabled = false
             account.params = params
 
             if (!registered) {
@@ -288,7 +303,7 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
     val outboundProxyListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
             val params = account.params.clone()
-            params.outboundProxyEnabled = newValue
+            params.isOutboundProxyEnabled = newValue
             account.params = params
         }
     }
@@ -297,7 +312,16 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
     val stunServerListener = object : SettingListenerStub() {
         override fun onTextValueChanged(newValue: String) {
             val params = account.params.clone()
-            params.natPolicy?.stunServer = newValue
+            if (params.natPolicy == null) {
+                Log.w("[Account Settings] No NAT Policy object in account params yet")
+                val natPolicy = core.createNatPolicy()
+                natPolicy.stunServer = newValue
+                natPolicy.isStunEnabled = newValue.isNotEmpty()
+                params.natPolicy = natPolicy
+            } else {
+                params.natPolicy?.stunServer = newValue
+                params.natPolicy?.isStunEnabled = newValue.isNotEmpty()
+            }
             if (newValue.isEmpty()) ice.value = false
             stunServer.value = newValue
             account.params = params
@@ -308,7 +332,7 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
     val iceListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
             val params = account.params.clone()
-            params.natPolicy?.enableIce(newValue)
+            params.natPolicy?.isIceEnabled = newValue
             account.params = params
         }
     }
@@ -370,7 +394,7 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
     val escapePlusListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
             val params = account.params.clone()
-            params.dialEscapePlusEnabled = newValue
+            params.isDialEscapePlusEnabled = newValue
             account.params = params
         }
     }
@@ -382,6 +406,27 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
         }
     }
     val linkPhoneNumberEvent = MutableLiveData<Event<Boolean>>()
+
+    val conferenceFactoryUriListener = object : SettingListenerStub() {
+        override fun onTextValueChanged(newValue: String) {
+            val params = account.params.clone()
+            Log.i("[Account Settings] Forcing conference factory on proxy config ${params.identityAddress?.asString()} to value: $newValue")
+            params.conferenceFactoryUri = newValue
+            account.params = params
+        }
+    }
+    val conferenceFactoryUri = MutableLiveData<String>()
+
+    val audioVideoConferenceFactoryUriListener = object : SettingListenerStub() {
+        override fun onTextValueChanged(newValue: String) {
+            val params = account.params.clone()
+            val uri = coreContext.core.interpretUrl(newValue, false)
+            Log.i("[Account Settings] Forcing audio/video conference factory on proxy config ${params.identityAddress?.asString()} to value: $newValue")
+            params.audioVideoConferenceFactoryAddress = uri
+            account.params = params
+        }
+    }
+    val audioVideoConferenceFactoryUri = MutableLiveData<String>()
 
     init {
         update()
@@ -424,19 +469,22 @@ class AccountSettingsViewModel(val account: Account) : GenericSettingsViewModel(
         userName.value = params.identityAddress?.username
         userId.value = account.findAuthInfo()?.userid
         domain.value = params.identityAddress?.domain
-        disable.value = !params.registerEnabled
+        disable.value = !params.isRegisterEnabled
         pushNotification.value = params.pushNotificationAllowed
         pushNotificationsAvailable.value = core.isPushNotificationAvailable
         proxy.value = params.serverAddress?.asStringUriOnly()
-        outboundProxy.value = params.outboundProxyEnabled
+        outboundProxy.value = params.isOutboundProxyEnabled
         stunServer.value = params.natPolicy?.stunServer
-        ice.value = params.natPolicy?.iceEnabled()
+        ice.value = params.natPolicy?.isIceEnabled
         avpf.value = params.avpfMode == AVPFMode.Enabled
         avpfRrInterval.value = params.avpfRrInterval
         expires.value = params.expires
         prefix.value = params.internationalPrefix
         dialPrefix.value = params.useInternationalPrefixForCallsAndChats
-        escapePlus.value = params.dialEscapePlusEnabled
+        escapePlus.value = params.isDialEscapePlusEnabled
+
+        conferenceFactoryUri.value = params.conferenceFactoryUri
+        audioVideoConferenceFactoryUri.value = params.audioVideoConferenceFactoryAddress?.asStringUriOnly()
     }
 
     private fun initTransportList() {

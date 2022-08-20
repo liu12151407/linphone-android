@@ -35,8 +35,8 @@ import org.linphone.activities.*
 import org.linphone.activities.assistant.viewmodels.WelcomeViewModel
 import org.linphone.activities.navigateToAccountLogin
 import org.linphone.activities.navigateToEmailAccountCreation
-import org.linphone.activities.navigateToGenericLogin
 import org.linphone.activities.navigateToRemoteProvisioning
+import org.linphone.core.tools.Log
 import org.linphone.databinding.AssistantWelcomeFragmentBinding
 
 class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
@@ -49,7 +49,7 @@ class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        viewModel = ViewModelProvider(this).get(WelcomeViewModel::class.java)
+        viewModel = ViewModelProvider(this)[WelcomeViewModel::class.java]
         binding.viewModel = viewModel
 
         binding.setCreateAccountClickListener {
@@ -65,7 +65,7 @@ class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
         }
 
         binding.setGenericAccountLoginClickListener {
-            navigateToGenericLogin()
+            navigateToGenericLoginWarning()
         }
 
         binding.setRemoteProvisioningClickListener {
@@ -73,11 +73,10 @@ class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
         }
 
         viewModel.termsAndPrivacyAccepted.observe(
-            viewLifecycleOwner,
-            {
-                if (it) corePreferences.readAndAgreeTermsAndPrivacy = true
-            }
-        )
+            viewLifecycleOwner
+        ) {
+            if (it) corePreferences.readAndAgreeTermsAndPrivacy = true
+        }
 
         setUpTermsAndPrivacyLinks()
     }
@@ -101,7 +100,11 @@ class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
                         Intent.ACTION_VIEW,
                         Uri.parse(getString(R.string.assistant_general_terms_link))
                     )
-                    startActivity(browserIntent)
+                    try {
+                        startActivity(browserIntent)
+                    } catch (e: Exception) {
+                        Log.e("[Welcome] Can't start activity: $e")
+                    }
                 }
             }
             spannable.setSpan(clickableSpan, termsMatcher.start(0), termsMatcher.end(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -115,7 +118,11 @@ class WelcomeFragment : GenericFragment<AssistantWelcomeFragmentBinding>() {
                         Intent.ACTION_VIEW,
                         Uri.parse(getString(R.string.assistant_privacy_policy_link))
                     )
-                    startActivity(browserIntent)
+                    try {
+                        startActivity(browserIntent)
+                    } catch (e: Exception) {
+                        Log.e("[Welcome] Can't start activity: $e")
+                    }
                 }
             }
             spannable.setSpan(clickableSpan, policyMatcher.start(0), policyMatcher.end(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)

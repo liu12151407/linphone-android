@@ -73,15 +73,14 @@ class CallLogsListAdapter(
                 // This is for item selection through ListTopBarFragment
                 selectionListViewModel = selectionViewModel
                 selectionViewModel.isEditionEnabled.observe(
-                    viewLifecycleOwner,
-                    {
-                        position = adapterPosition
-                    }
-                )
+                    viewLifecycleOwner
+                ) {
+                    position = bindingAdapterPosition
+                }
 
                 setClickListener {
                     if (selectionViewModel.isEditionEnabled.value == true) {
-                        selectionViewModel.onToggleSelect(adapterPosition)
+                        selectionViewModel.onToggleSelect(bindingAdapterPosition)
                     } else {
                         startCallToEvent.value = Event(callLogGroup)
                     }
@@ -153,6 +152,6 @@ private class CallLogDiffCallback : DiffUtil.ItemCallback<GroupedCallLogData>() 
         oldItem: GroupedCallLogData,
         newItem: GroupedCallLogData
     ): Boolean {
-        return false // For headers
+        return oldItem.callLogs.size == newItem.callLogs.size
     }
 }

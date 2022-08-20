@@ -28,7 +28,7 @@
             android:id="@+id/top_bar_fragment"
             android:name="org.linphone.activities.assistant.fragments.TopBarFragment"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="@dimen/main_activity_top_bar_size"
             android:layout_alignParentTop="true"
             tools:layout="@layout/assistant_top_bar_fragment" />
 
@@ -237,6 +237,22 @@
                         android:text="@string/assistant_login_with_username" />
 
                 </LinearLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/assistant_display_name_optional">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:text="@={viewModel.displayName}"
+                        android:imeOptions="actionDone"
+                        android:singleLine="true"
+                        android:inputType="textPersonName"
+                        android:background="@color/transparent_color"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"/>
+
+                </com.google.android.material.textfield.TextInputLayout>
 
                 <TextView
                     android:onClick="@{() -> viewModel.login()}"

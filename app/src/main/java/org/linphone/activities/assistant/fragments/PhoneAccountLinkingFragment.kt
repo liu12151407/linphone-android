@@ -22,9 +22,9 @@ package org.linphone.activities.assistant.fragments
 import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.ViewModelProvider
-import org.linphone.LinphoneApplication
+import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
-import org.linphone.activities.assistant.AssistantActivity
+import org.linphone.activities.SnackBarActivity
 import org.linphone.activities.assistant.viewmodels.*
 import org.linphone.activities.navigateToEchoCancellerCalibration
 import org.linphone.activities.navigateToPhoneAccountValidation
@@ -32,7 +32,7 @@ import org.linphone.core.tools.Log
 import org.linphone.databinding.AssistantPhoneAccountLinkingFragmentBinding
 
 class PhoneAccountLinkingFragment : AbstractPhoneFragment<AssistantPhoneAccountLinkingFragmentBinding>() {
-    private lateinit var sharedViewModel: SharedAssistantViewModel
+    private lateinit var sharedAssistantViewModel: SharedAssistantViewModel
     override lateinit var viewModel: PhoneAccountLinkingViewModel
 
     override fun getLayoutId(): Int = R.layout.assistant_phone_account_linking_fragment
@@ -42,12 +42,12 @@ class PhoneAccountLinkingFragment : AbstractPhoneFragment<AssistantPhoneAccountL
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedAssistantViewModel::class.java)
+        sharedAssistantViewModel = requireActivity().run {
+            ViewModelProvider(this)[SharedAssistantViewModel::class.java]
         }
 
-        val accountCreator = sharedViewModel.getAccountCreator()
-        viewModel = ViewModelProvider(this, PhoneAccountLinkingViewModelFactory(accountCreator)).get(PhoneAccountLinkingViewModel::class.java)
+        val accountCreator = sharedAssistantViewModel.getAccountCreator()
+        viewModel = ViewModelProvider(this, PhoneAccountLinkingViewModelFactory(accountCreator))[PhoneAccountLinkingViewModel::class.java]
         binding.viewModel = viewModel
 
         val username = arguments?.getString("Username")
@@ -72,39 +72,36 @@ class PhoneAccountLinkingFragment : AbstractPhoneFragment<AssistantPhoneAccountL
         }
 
         viewModel.goToSmsValidationEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    val args = Bundle()
-                    args.putBoolean("IsLinking", true)
-                    args.putString("PhoneNumber", viewModel.accountCreator.phoneNumber)
-                    navigateToPhoneAccountValidation(args)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                val args = Bundle()
+                args.putBoolean("IsLinking", true)
+                args.putString("PhoneNumber", viewModel.accountCreator.phoneNumber)
+                navigateToPhoneAccountValidation(args)
             }
-        )
+        }
 
         viewModel.leaveAssistantEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    if (LinphoneApplication.coreContext.core.isEchoCancellerCalibrationRequired) {
-                        navigateToEchoCancellerCalibration()
-                    } else {
-                        requireActivity().finish()
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                if (coreContext.core.isEchoCancellerCalibrationRequired) {
+                    navigateToEchoCancellerCalibration()
+                } else {
+                    requireActivity().finish()
                 }
             }
-        )
+        }
 
         viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { message ->
-                    (requireActivity() as AssistantActivity).showSnackBar(message)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { message ->
+                (requireActivity() as SnackBarActivity).showSnackBar(message)
             }
-        )
+        }
 
-        checkPermission()
+        checkPermissions()
     }
 }

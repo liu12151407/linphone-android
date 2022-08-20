@@ -21,6 +21,7 @@ package org.linphone.activities.main.chat.views
 
 import android.content.Context
 import android.text.Layout
+import android.text.method.LinkMovementMethod
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatTextView
 import kotlin.math.ceil
@@ -40,23 +41,22 @@ class MultiLineWrapContentWidthTextView : AppCompatTextView {
         defStyleAttr: Int
     ) : super(context, attrs, defStyleAttr)
 
+    override fun setText(text: CharSequence?, type: BufferType?) {
+        super.setText(text, type)
+        // Required for PatternClickableSpan
+        movementMethod = LinkMovementMethod.getInstance()
+    }
+
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        var wSpec = widthSpec
-        val widthMode = MeasureSpec.getMode(wSpec)
+        super.onMeasure(widthSpec, heightSpec)
 
-        if (widthMode == MeasureSpec.AT_MOST) {
-            val layout = layout
-            if (layout != null) {
-                val maxWidth = (
-                    ceil(getMaxLineWidth(layout).toDouble()).toInt() +
-                        totalPaddingLeft +
-                        totalPaddingRight
-                    )
-                wSpec = MeasureSpec.makeMeasureSpec(maxWidth, MeasureSpec.AT_MOST)
-            }
+        if (layout != null && layout.lineCount >= 2) {
+            val maxLineWidth = ceil(getMaxLineWidth(layout)).toInt()
+            val uselessPaddingWidth = layout.width - maxLineWidth
+            val width = measuredWidth - uselessPaddingWidth
+            val height = measuredHeight
+            setMeasuredDimension(width, height)
         }
-
-        super.onMeasure(wSpec, heightSpec)
     }
 
     private fun getMaxLineWidth(layout: Layout): Float {

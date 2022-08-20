@@ -40,17 +40,20 @@ class LinphoneUtils {
     companion object {
         private const val RECORDING_DATE_PATTERN = "dd-MM-yyyy-HH-mm-ss"
 
-        fun getDisplayName(address: Address): String {
+        fun getDisplayName(address: Address?): String {
+            if (address == null) return "[null]"
             if (address.displayName == null) {
                 val account = coreContext.core.accountList.find { account ->
                     account.params.identityAddress?.asStringUriOnly() == address.asStringUriOnly()
                 }
                 val localDisplayName = account?.params?.identityAddress?.displayName
-                if (localDisplayName != null) {
+                // Do not return an empty local display name
+                if (localDisplayName != null && localDisplayName.isNotEmpty()) {
                     return localDisplayName
                 }
             }
-            return address.displayName ?: address.username ?: ""
+            // Do not return an empty display name
+            return address.displayName ?: address.username ?: address.asString()
         }
 
         fun getDisplayableAddress(address: Address?): String {
@@ -64,9 +67,46 @@ class LinphoneUtils {
             }
         }
 
+        fun getCleanedAddress(address: Address): Address {
+            // To remove the GRUU if any
+            val cleanAddress = address.clone()
+            cleanAddress.clean()
+            return cleanAddress
+        }
+
+        fun getConferenceAddress(call: Call): Address? {
+            val remoteContact = call.remoteContact
+            val conferenceAddress = if (call.dir == Call.Dir.Incoming) {
+                if (remoteContact != null)
+                    coreContext.core.interpretUrl(remoteContact, false)
+                else
+                    null
+            } else {
+                call.remoteAddress
+            }
+            return conferenceAddress
+        }
+
+        fun getConferenceSubject(conference: Conference): String? {
+            return if (conference.subject.isNullOrEmpty()) {
+                val conferenceInfo = coreContext.core.findConferenceInformationFromUri(conference.conferenceAddress)
+                if (conferenceInfo != null) {
+                    conferenceInfo.subject
+                } else {
+                    if (conference.me.isFocus) {
+                        AppUtils.getString(R.string.conference_local_title)
+                    } else {
+                        AppUtils.getString(R.string.conference_default_title)
+                    }
+                }
+            } else {
+                conference.subject
+            }
+        }
+
         fun isLimeAvailable(): Boolean {
             val core = coreContext.core
-            return core.limeX3DhAvailable() && core.limeX3DhEnabled() &&
+            return core.limeX3DhAvailable() && core.isLimeX3DhEnabled &&
                 core.limeX3DhServerUrl != null &&
                 core.defaultAccount?.params?.conferenceFactoryUri != null
         }
@@ -76,23 +116,28 @@ class LinphoneUtils {
             return core.defaultAccount?.params?.conferenceFactoryUri != null
         }
 
+        fun isRemoteConferencingAvailable(): Boolean {
+            val core = coreContext.core
+            return core.defaultAccount?.params?.audioVideoConferenceFactoryAddress != null || core.defaultAccount?.params?.conferenceFactoryUri != null
+        }
+
         fun createOneToOneChatRoom(participant: Address, isSecured: Boolean = false): ChatRoom? {
             val core: Core = coreContext.core
             val defaultAccount = core.defaultAccount
 
             val params = core.createDefaultChatRoomParams()
-            params.enableGroup(false)
+            params.isGroupEnabled = false
             params.backend = ChatRoomBackend.Basic
             if (isSecured) {
                 params.subject = AppUtils.getString(R.string.chat_room_dummy_subject)
-                params.enableEncryption(true)
+                params.isEncryptionEnabled = true
                 params.backend = ChatRoomBackend.FlexisipChat
             }
 
             val participants = arrayOf(participant)
 
-            return core.searchChatRoom(params, defaultAccount?.contactAddress, null, participants)
-                ?: core.createChatRoom(params, defaultAccount?.contactAddress, participants)
+            return core.searchChatRoom(params, defaultAccount?.params?.identityAddress, null, participants)
+                ?: core.createChatRoom(params, defaultAccount?.params?.identityAddress, participants)
         }
 
         fun deleteFilesAttachedToEventLog(eventLog: EventLog) {
@@ -122,12 +167,15 @@ class LinphoneUtils {
             return FileUtils.getFileStoragePath(fileName).absolutePath
         }
 
-        fun getRecordingFilePathForConference(): String {
+        fun getRecordingFilePathForConference(subject: String?): String {
             val dateFormat: DateFormat = SimpleDateFormat(
                 RECORDING_DATE_PATTERN,
                 Locale.getDefault()
             )
-            val fileName = "conference_${dateFormat.format(Date())}.mkv"
+            val fileName = if (subject.isNullOrEmpty())
+                "conference_${dateFormat.format(Date())}.mkv"
+            else
+                "${subject}_${dateFormat.format(Date())}.mkv"
             return FileUtils.getFileStoragePath(fileName).absolutePath
         }
 
@@ -162,8 +210,39 @@ class LinphoneUtils {
                 )
         }
 
-        fun getChatRoomId(localAddress: String, remoteAddress: String): String {
-            return "$localAddress~$remoteAddress"
+        fun areChatRoomsTheSame(chatRoom1: ChatRoom, chatRoom2: ChatRoom): Boolean {
+            return chatRoom1.localAddress.weakEqual(chatRoom2.localAddress) &&
+                chatRoom1.peerAddress.weakEqual(chatRoom2.peerAddress)
+        }
+
+        fun getChatRoomId(localAddress: Address, remoteAddress: Address): String {
+            val localSipUri = localAddress.clone()
+            localSipUri.clean()
+            val remoteSipUri = remoteAddress.clone()
+            remoteSipUri.clean()
+            return "${localSipUri.asStringUriOnly()}~${remoteSipUri.asStringUriOnly()}"
+        }
+
+        fun getAccountsNotHidden(): List<Account> {
+            val list = arrayListOf<Account>()
+
+            for (account in coreContext.core.accountList) {
+                if (account.getCustomParam("hidden") != "1") {
+                    list.add(account)
+                }
+            }
+
+            return list
+        }
+
+        fun applyInternationalPrefix(): Boolean {
+            val account = coreContext.core.defaultAccount
+            if (account != null) {
+                val params = account.params
+                return params.useInternationalPrefixForCallsAndChats
+            }
+
+            return true // Legacy behavior
         }
     }
 }

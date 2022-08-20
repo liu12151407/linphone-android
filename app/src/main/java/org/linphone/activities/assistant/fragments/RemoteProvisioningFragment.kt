@@ -33,7 +33,7 @@ import org.linphone.activities.navigateToQrCode
 import org.linphone.databinding.AssistantRemoteProvisioningFragmentBinding
 
 class RemoteProvisioningFragment : GenericFragment<AssistantRemoteProvisioningFragmentBinding>() {
-    private lateinit var sharedViewModel: SharedAssistantViewModel
+    private lateinit var sharedAssistantViewModel: SharedAssistantViewModel
     private lateinit var viewModel: RemoteProvisioningViewModel
 
     override fun getLayoutId(): Int = R.layout.assistant_remote_provisioning_fragment
@@ -43,11 +43,11 @@ class RemoteProvisioningFragment : GenericFragment<AssistantRemoteProvisioningFr
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedAssistantViewModel::class.java)
+        sharedAssistantViewModel = requireActivity().run {
+            ViewModelProvider(this)[SharedAssistantViewModel::class.java]
         }
 
-        viewModel = ViewModelProvider(this).get(RemoteProvisioningViewModel::class.java)
+        viewModel = ViewModelProvider(this)[RemoteProvisioningViewModel::class.java]
         binding.viewModel = viewModel
 
         binding.setQrCodeClickListener {
@@ -55,28 +55,30 @@ class RemoteProvisioningFragment : GenericFragment<AssistantRemoteProvisioningFr
         }
 
         viewModel.fetchSuccessfulEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { success ->
-                    if (success) {
-                        if (coreContext.core.isEchoCancellerCalibrationRequired) {
-                            navigateToEchoCancellerCalibration()
-                        } else {
-                            requireActivity().finish()
-                        }
+            viewLifecycleOwner
+        ) {
+            it.consume { success ->
+                if (success) {
+                    if (coreContext.core.isEchoCancellerCalibrationRequired) {
+                        navigateToEchoCancellerCalibration()
                     } else {
-                        val activity = requireActivity() as AssistantActivity
-                        activity.showSnackBar(R.string.assistant_remote_provisioning_failure)
+                        requireActivity().finish()
                     }
+                } else {
+                    val activity = requireActivity() as AssistantActivity
+                    activity.showSnackBar(R.string.assistant_remote_provisioning_failure)
                 }
             }
-        )
+        }
 
-        viewModel.urlToFetch.value = sharedViewModel.remoteProvisioningUrl.value ?: coreContext.core.provisioningUri
+        viewModel.urlToFetch.value = sharedAssistantViewModel.remoteProvisioningUrl.value ?: coreContext.core.provisioningUri
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        sharedViewModel.remoteProvisioningUrl.value = null
+
+        if (::sharedAssistantViewModel.isInitialized) {
+            sharedAssistantViewModel.remoteProvisioningUrl.value = null
+        }
     }
 }

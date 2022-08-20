@@ -24,19 +24,21 @@ import android.content.Context.CLIPBOARD_SERVICE
 import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.ViewModelProvider
+import androidx.navigation.fragment.findNavController
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
 import org.linphone.activities.GenericFragment
-import org.linphone.activities.assistant.AssistantActivity
+import org.linphone.activities.SnackBarActivity
 import org.linphone.activities.assistant.viewmodels.PhoneAccountValidationViewModel
 import org.linphone.activities.assistant.viewmodels.PhoneAccountValidationViewModelFactory
 import org.linphone.activities.assistant.viewmodels.SharedAssistantViewModel
 import org.linphone.activities.navigateToAccountSettings
 import org.linphone.activities.navigateToEchoCancellerCalibration
+import org.linphone.core.tools.Log
 import org.linphone.databinding.AssistantPhoneAccountValidationFragmentBinding
 
 class PhoneAccountValidationFragment : GenericFragment<AssistantPhoneAccountValidationFragmentBinding>() {
-    private lateinit var sharedViewModel: SharedAssistantViewModel
+    private lateinit var sharedAssistantViewModel: SharedAssistantViewModel
     private lateinit var viewModel: PhoneAccountValidationViewModel
 
     override fun getLayoutId(): Int = R.layout.assistant_phone_account_validation_fragment
@@ -46,11 +48,11 @@ class PhoneAccountValidationFragment : GenericFragment<AssistantPhoneAccountVali
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedAssistantViewModel::class.java)
+        sharedAssistantViewModel = requireActivity().run {
+            ViewModelProvider(this)[SharedAssistantViewModel::class.java]
         }
 
-        viewModel = ViewModelProvider(this, PhoneAccountValidationViewModelFactory(sharedViewModel.getAccountCreator())).get(PhoneAccountValidationViewModel::class.java)
+        viewModel = ViewModelProvider(this, PhoneAccountValidationViewModelFactory(sharedAssistantViewModel.getAccountCreator()))[PhoneAccountValidationViewModel::class.java]
         binding.viewModel = viewModel
 
         viewModel.phoneNumber.value = arguments?.getString("PhoneNumber")
@@ -59,45 +61,54 @@ class PhoneAccountValidationFragment : GenericFragment<AssistantPhoneAccountVali
         viewModel.isLinking.value = arguments?.getBoolean("IsLinking", false)
 
         viewModel.leaveAssistantEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    when {
-                        viewModel.isLogin.value == true || viewModel.isCreation.value == true -> {
-                            coreContext.contactsManager.updateLocalContacts()
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                when {
+                    viewModel.isLogin.value == true || viewModel.isCreation.value == true -> {
+                        coreContext.newAccountConfigured(true)
 
-                            if (coreContext.core.isEchoCancellerCalibrationRequired) {
-                                navigateToEchoCancellerCalibration()
-                            } else {
-                                requireActivity().finish()
-                            }
+                        if (coreContext.core.isEchoCancellerCalibrationRequired) {
+                            navigateToEchoCancellerCalibration()
+                        } else {
+                            requireActivity().finish()
                         }
-                        viewModel.isLinking.value == true -> {
+                    }
+                    viewModel.isLinking.value == true -> {
+                        if (findNavController().graph.id == R.id.settings_nav_graph_xml) {
                             val args = Bundle()
-                            args.putString("Identity", "sip:${viewModel.accountCreator.username}@${viewModel.accountCreator.domain}")
+                            args.putString(
+                                "Identity",
+                                "sip:${viewModel.accountCreator.username}@${viewModel.accountCreator.domain}"
+                            )
                             navigateToAccountSettings(args)
+                        } else {
+                            requireActivity().finish()
                         }
                     }
                 }
             }
-        )
+        }
 
         viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { message ->
-                    (requireActivity() as AssistantActivity).showSnackBar(message)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { message ->
+                (requireActivity() as SnackBarActivity).showSnackBar(message)
             }
-        )
+        }
 
+        // This won't work starting Android 10 as clipboard access is denied unless app has focus,
+        // which won't be the case when the SMS arrives unless it is added into clipboard from a notification
         val clipboard = requireContext().getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.addPrimaryClipChangedListener {
             val data = clipboard.primaryClip
             if (data != null && data.itemCount > 0) {
                 val clip = data.getItemAt(0).text.toString()
                 if (clip.length == 4) {
+                    Log.i("[Assistant] [Phone Account Validation] Found 4 digits as primary clip in clipboard, using it and clear it")
                     viewModel.code.value = clip
+                    clipboard.clearPrimaryClip()
                 }
             }
         }

@@ -24,6 +24,7 @@ import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.ViewModelProvider
 import org.linphone.LinphoneApplication.Companion.coreContext
+import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.activities.GenericFragment
 import org.linphone.activities.assistant.AssistantActivity
@@ -36,7 +37,7 @@ import org.linphone.databinding.AssistantGenericAccountLoginFragmentBinding
 import org.linphone.utils.DialogUtils
 
 class GenericAccountLoginFragment : GenericFragment<AssistantGenericAccountLoginFragmentBinding>() {
-    private lateinit var sharedViewModel: SharedAssistantViewModel
+    private lateinit var sharedAssistantViewModel: SharedAssistantViewModel
     private lateinit var viewModel: GenericLoginViewModel
 
     override fun getLayoutId(): Int = R.layout.assistant_generic_account_login_fragment
@@ -46,60 +47,59 @@ class GenericAccountLoginFragment : GenericFragment<AssistantGenericAccountLogin
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedAssistantViewModel::class.java)
+        sharedAssistantViewModel = requireActivity().run {
+            ViewModelProvider(this)[SharedAssistantViewModel::class.java]
         }
 
-        viewModel = ViewModelProvider(this, GenericLoginViewModelFactory(sharedViewModel.getAccountCreator(true))).get(GenericLoginViewModel::class.java)
+        viewModel = ViewModelProvider(this, GenericLoginViewModelFactory(sharedAssistantViewModel.getAccountCreator(true)))[GenericLoginViewModel::class.java]
         binding.viewModel = viewModel
 
         viewModel.leaveAssistantEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    coreContext.contactsManager.updateLocalContacts()
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                val isLinphoneAccount = viewModel.domain.value.orEmpty() == corePreferences.defaultDomain
+                coreContext.newAccountConfigured(isLinphoneAccount)
 
-                    if (coreContext.core.isEchoCancellerCalibrationRequired) {
-                        navigateToEchoCancellerCalibration()
-                    } else {
-                        requireActivity().finish()
-                    }
+                if (coreContext.core.isEchoCancellerCalibrationRequired) {
+                    navigateToEchoCancellerCalibration()
+                } else {
+                    requireActivity().finish()
                 }
             }
-        )
+        }
 
         viewModel.invalidCredentialsEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    val dialogViewModel = DialogViewModel(getString(R.string.assistant_error_invalid_credentials))
-                    val dialog: Dialog = DialogUtils.getDialog(requireContext(), dialogViewModel)
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                val dialogViewModel =
+                    DialogViewModel(getString(R.string.assistant_error_invalid_credentials))
+                val dialog: Dialog = DialogUtils.getDialog(requireContext(), dialogViewModel)
 
-                    dialogViewModel.showCancelButton {
-                        viewModel.removeInvalidProxyConfig()
-                        dialog.dismiss()
-                    }
-
-                    dialogViewModel.showDeleteButton(
-                        {
-                            viewModel.continueEvenIfInvalidCredentials()
-                            dialog.dismiss()
-                        },
-                        getString(R.string.assistant_continue_even_if_credentials_invalid)
-                    )
-
-                    dialog.show()
+                dialogViewModel.showCancelButton {
+                    viewModel.removeInvalidProxyConfig()
+                    dialog.dismiss()
                 }
+
+                dialogViewModel.showDeleteButton(
+                    {
+                        viewModel.continueEvenIfInvalidCredentials()
+                        dialog.dismiss()
+                    },
+                    getString(R.string.assistant_continue_even_if_credentials_invalid)
+                )
+
+                dialog.show()
             }
-        )
+        }
 
         viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { message ->
-                    (requireActivity() as AssistantActivity).showSnackBar(message)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { message ->
+                (requireActivity() as AssistantActivity).showSnackBar(message)
             }
-        )
+        }
     }
 }

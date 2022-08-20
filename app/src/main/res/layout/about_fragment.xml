@@ -1,17 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:bind="http://schemas.android.com/tools">
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
 
     <data>
         <import type="android.view.View"/>
-        <variable
-            name="backClickListener"
-            type="android.view.View.OnClickListener"/>
         <variable
             name="privacyPolicyClickListener"
             type="android.view.View.OnClickListener"/>
         <variable
             name="licenseClickListener"
+            type="android.view.View.OnClickListener"/>
+        <variable
+            name="weblateClickListener"
             type="android.view.View.OnClickListener"/>
         <variable
             name="viewModel"
@@ -33,7 +32,6 @@
 
             <ImageView
                 android:id="@+id/back"
-                android:onClick="@{backClickListener}"
                 android:contentDescription="@string/content_description_go_back"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
@@ -75,7 +73,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:layout_gravity="center"
-                    android:background="@color/dark_grey_color"
+                    android:background="@color/voip_dark_color2"
                     android:gravity="center"
                     android:orientation="vertical"
                     android:padding="20dp">
@@ -168,8 +166,20 @@
                         android:layout_gravity="center"
                         android:gravity="center"
                         android:paddingTop="10dp"
-                        android:paddingBottom="20dp"
+                        android:paddingBottom="10dp"
                         android:text="@string/about_text" />
+
+                    <TextView
+                        android:onClick="@{weblateClickListener}"
+                        android:textColor="?attr/accentColor"
+                        android:textSize="16sp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="20dp"
+                        android:text="@string/about_weblate_translation" />
 
                     <View
                         android:layout_width="match_parent"

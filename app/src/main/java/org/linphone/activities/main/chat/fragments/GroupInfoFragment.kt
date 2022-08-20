@@ -33,7 +33,6 @@ import org.linphone.activities.main.chat.viewmodels.GroupInfoViewModel
 import org.linphone.activities.main.chat.viewmodels.GroupInfoViewModelFactory
 import org.linphone.activities.main.fragments.SecureFragment
 import org.linphone.activities.main.viewmodels.DialogViewModel
-import org.linphone.activities.main.viewmodels.SharedMainViewModel
 import org.linphone.activities.navigateToChatRoom
 import org.linphone.activities.navigateToChatRoomCreation
 import org.linphone.core.Address
@@ -45,7 +44,6 @@ import org.linphone.utils.DialogUtils
 
 class GroupInfoFragment : SecureFragment<ChatRoomGroupInfoFragmentBinding>() {
     private lateinit var viewModel: GroupInfoViewModel
-    private lateinit var sharedViewModel: SharedMainViewModel
     private lateinit var adapter: GroupInfoParticipantsAdapter
     private var meAdminStatusChangedDialog: Dialog? = null
 
@@ -56,12 +54,8 @@ class GroupInfoFragment : SecureFragment<ChatRoomGroupInfoFragmentBinding>() {
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedMainViewModel::class.java)
-        }
-
         val chatRoom: ChatRoom? = sharedViewModel.selectedGroupChatRoom.value
-        isSecure = chatRoom?.currentParams?.encryptionEnabled() ?: false
+        isSecure = chatRoom?.currentParams?.isEncryptionEnabled ?: false
 
         viewModel = ViewModelProvider(
             this,
@@ -73,63 +67,61 @@ class GroupInfoFragment : SecureFragment<ChatRoomGroupInfoFragmentBinding>() {
 
         adapter = GroupInfoParticipantsAdapter(
             viewLifecycleOwner,
-            chatRoom?.hasCapability(ChatRoomCapabilities.Encrypted.toInt()) ?: viewModel.isEncrypted.value == true
+            chatRoom?.hasCapability(ChatRoomCapabilities.Encrypted.toInt()) ?: (viewModel.isEncrypted.value == true)
         )
         binding.participants.adapter = adapter
 
-        val layoutManager = LinearLayoutManager(activity)
+        val layoutManager = LinearLayoutManager(requireContext())
         binding.participants.layoutManager = layoutManager
 
         // Divider between items
         binding.participants.addItemDecoration(AppUtils.getDividerDecoration(requireContext(), layoutManager))
 
         viewModel.participants.observe(
-            viewLifecycleOwner,
-            {
-                adapter.submitList(it)
-            }
-        )
+            viewLifecycleOwner
+        ) {
+            adapter.submitList(it)
+        }
 
         viewModel.isMeAdmin.observe(
-            viewLifecycleOwner,
-            { isMeAdmin ->
-                adapter.showAdminControls(isMeAdmin && chatRoom != null)
-            }
-        )
+            viewLifecycleOwner
+        ) { isMeAdmin ->
+            adapter.showAdminControls(isMeAdmin && chatRoom != null)
+        }
 
         viewModel.meAdminChangedEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { isMeAdmin ->
-                    showMeAdminStateChanged(isMeAdmin)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { isMeAdmin ->
+                showMeAdminStateChanged(isMeAdmin)
             }
-        )
+        }
 
         adapter.participantRemovedEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { participant ->
-                    viewModel.removeParticipant(participant)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { participant ->
+                viewModel.removeParticipant(participant)
             }
-        )
+        }
 
         addParticipantsFromSharedViewModel()
 
-        binding.setBackClickListener {
-            goBack()
+        viewModel.createdChatRoomEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { chatRoom ->
+                goToChatRoom(chatRoom, true)
+            }
         }
 
-        viewModel.createdChatRoomEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { chatRoom ->
-                    sharedViewModel.selectedChatRoom.value = chatRoom
-                    navigateToChatRoom(AppUtils.createBundleWithSharedTextAndFiles(sharedViewModel))
-                }
+        viewModel.updatedChatRoomEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { chatRoom ->
+                goToChatRoom(chatRoom, false)
             }
-        )
+        }
 
         binding.setNextClickListener {
             if (viewModel.chatRoom != null) {
@@ -173,14 +165,13 @@ class GroupInfoFragment : SecureFragment<ChatRoomGroupInfoFragmentBinding>() {
             dialog.show()
         }
 
-        viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { messageResourceId ->
-                    (activity as MainActivity).showSnackBar(messageResourceId)
-                }
+        viewModel.onMessageToNotifyEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { messageResourceId ->
+                (activity as MainActivity).showSnackBar(messageResourceId)
             }
-        )
+        }
     }
 
     private fun addParticipantsFromSharedViewModel() {
@@ -230,5 +221,10 @@ class GroupInfoFragment : SecureFragment<ChatRoomGroupInfoFragmentBinding>() {
 
         dialog.show()
         meAdminStatusChangedDialog = dialog
+    }
+
+    private fun goToChatRoom(chatRoom: ChatRoom, created: Boolean) {
+        sharedViewModel.selectedChatRoom.value = chatRoom
+        navigateToChatRoom(AppUtils.createBundleWithSharedTextAndFiles(sharedViewModel), created)
     }
 }

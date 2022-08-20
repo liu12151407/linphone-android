@@ -1,16 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-
 <!DOCTYPE resources [
-    <!ENTITY appName "Linphone">
+<!ENTITY appName "Linphone">
 ]>
-
 <resources>
     <string name="service_auto_start_description">&appName; is automatisch gestart</string>
     <string name="service_description">Dit is vereist om oproepen te ontvangen in de achtergrond</string>
     <string name="sync_account_name">&appName; contacten</string>
     <string name="about_privacy_policy">Bekijk onze privacyverklaring</string>
     <string name="logs_url_copied_to_clipboard">Logs URL gekopieerd naar klembord</string>
-    <string name="error">Fout</string>
     <string name="phone_number">Telefoonnummer</string>
     <string name="phone_numbers">Telefoonnummers</string>
     <string name="select_your_country">Selecteer uw land</string>
@@ -27,7 +24,6 @@
         <item quantity="other">%d dagen</item>
     </plurals>
     <string name="share_uploaded_logs_link">Link naar logbestand delen met…</string>
-    <string name="invalid_email">Ongeldig emailadres</string>
     <string name="today">Vandaag</string>
     <string name="yesterday">Gisteren</string>
     <string name="transport">Transport</string>
@@ -48,18 +44,16 @@
     <string name="history_delete_one_dialog">Weet u zeker dat u dit record wil verwijderen\?</string>
     <string name="history_delete_many_dialog">Weet u zeker dat u deze records wil verwijderen\?</string>
     <string name="contact_invite_friend">Uitnodigen</string>
-    <string name="no_contact">Geen contacten in uw adresboek</string>
-    <string name="no_sip_contact">Geen SIP contact in uw adresboek</string>
+    <string name="no_contact">Geen contacten in uw adresboek.</string>
+    <string name="no_sip_contact">Geen SIP contact in uw adresboek.</string>
     <string name="contact_filter_hint">Zoek een contact</string>
     <string name="contact_last_name">Achternaam</string>
     <string name="contact_first_name">Voornaam</string>
     <string name="contact_organization">Organisatie</string>
     <string name="contact_choose_existing_or_new_to_add_number">Selecteer een contactpersoon of maak een nieuwe aan</string>
     <string name="contact_editor_write_permission_denied">Machtiging schrijven contacten geweigerd, kan deze contactpersoon niet editeren</string>
-    <string name="contact_delete_one_dialog">Wil u deze contactpersoon verwijderen\?
-\nDeze wordt ook verwijderd uit het adresboek van uw toestel</string>
-    <string name="contact_delete_many_dialog">Weet u zeker dat u deze contactpersonen wil verwijderen\?
-\nDeze worden ook verwijderd uit het adresboek van uw toestel</string>
+    <string name="contact_delete_one_dialog">Wil u deze contactpersoon verwijderen\?\nDeze wordt ook verwijderd uit het adresboek van uw toestel</string>
+    <string name="contact_delete_many_dialog">Weet u zeker dat u deze contactpersonen wil verwijderen\?\nDeze worden ook verwijderd uit het adresboek van uw toestel</string>
     <string name="contact_new_choose_sync_account">Selecteer waar de contactpersoon moet worden opgeslagen</string>
     <string name="contact_local_sync_account">Lokaal opslaan</string>
     <string name="dialer_address_bar_hint">Vul een nummer of adres in</string>
@@ -99,8 +93,6 @@
     <string name="chat_message_context_menu_copy_text">Kopieer tekst</string>
     <string name="chat_message_context_menu_add_to_contacts">Toevoegen aan contacten</string>
     <string name="chat_message_forward_confirmation_dialog">Wil u het bericht in deze chatroom doorsturen\?</string>
-    <string name="chat_room_toast_choose_for_sharing">Selecteer een conversatie of begin een nieuwe</string>
-    <string name="chat_room_cant_open_file_no_app_found">Kan bestand niet openen, geen applicatie beschikbaar voor dit formaat.</string>
     <string name="chat_room_file_not_found">Bestand niet gevonden</string>
     <string name="chat_room_ephemeral_message_one_minute">1 minuut</string>
     <string name="chat_room_ephemeral_message_one_hour">1 uur</string>
@@ -113,11 +105,9 @@
     </plurals>
     <string name="call_incoming_title">Inkomende oproep</string>
     <string name="call_outgoing_title">Uitgaande oproep</string>
-    <string name="call_paused_by_remote">Gesprek werd gepauzeerd door tegenpartij</string>
     <string name="call_notification_paused">Gepauzeerde oproep</string>
     <string name="call_notification_outgoing">Uitgaande oproep</string>
     <string name="call_notification_active">In gesprek</string>
-    <string name="call_conference_title">Conferentie</string>
     <string name="call_error_declined">Oproep werd geweigerd</string>
     <string name="call_error_user_busy">Gebruiker is bezet</string>
     <string name="call_error_user_not_found">Gebruiker niet gevonden</string>

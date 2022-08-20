@@ -20,6 +20,7 @@
 package org.linphone.activities.main.settings.viewmodels
 
 import androidx.lifecycle.MutableLiveData
+import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.activities.main.settings.SettingListenerStub
 import org.linphone.utils.Event
 import org.linphone.utils.PermissionHelper
@@ -33,10 +34,11 @@ class ContactsSettingsViewModel : GenericSettingsViewModel() {
 
     val friendListSubscribeListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
-            core.enableFriendListSubscription(newValue)
+            core.isFriendListSubscriptionEnabled = newValue
         }
     }
     val friendListSubscribe = MutableLiveData<Boolean>()
+    val rlsAddressAvailable = MutableLiveData<Boolean>()
 
     val showNewContactAccountDialogListener = object : SettingListenerStub() {
         override fun onBoolValueChanged(newValue: Boolean) {
@@ -76,13 +78,46 @@ class ContactsSettingsViewModel : GenericSettingsViewModel() {
     val launcherShortcuts = MutableLiveData<Boolean>()
     val launcherShortcutsEvent = MutableLiveData<Event<Boolean>>()
 
+    val ldapAvailable = MutableLiveData<Boolean>()
+
+    val ldapConfigurations = MutableLiveData<ArrayList<LdapSettingsViewModel>>()
+
+    lateinit var ldapNewSettingsListener: SettingListenerStub
+    val ldapSettingsClickedEvent: MutableLiveData<Event<Int>> by lazy {
+        MutableLiveData<Event<Int>>()
+    }
+    private var ldapSettingsListener = object : SettingListenerStub() {
+        override fun onAccountClicked(identity: String) {
+            ldapSettingsClickedEvent.value = Event(identity.toInt())
+        }
+    }
+
     init {
         readContactsPermissionGranted.value = PermissionHelper.get().hasReadContactsPermission()
 
         friendListSubscribe.value = core.isFriendListSubscriptionEnabled
+        rlsAddressAvailable.value = !core.config.getString("sip", "rls_uri", "").isNullOrEmpty()
         showNewContactAccountDialog.value = prefs.showNewContactAccountDialog
         nativePresence.value = prefs.storePresenceInNativeContact
         showOrganization.value = prefs.displayOrganization
         launcherShortcuts.value = prefs.contactsShortcuts
+
+        ldapAvailable.value = core.ldapAvailable()
+        ldapConfigurations.value = arrayListOf()
+
+        updateLdapConfigurationsList()
+    }
+
+    fun updateLdapConfigurationsList() {
+        val list = arrayListOf<LdapSettingsViewModel>()
+        var index = 0
+        for (ldap in coreContext.core.ldapList) {
+            val viewModel = LdapSettingsViewModel(ldap, index.toString())
+            viewModel.ldapSettingsListener = ldapSettingsListener
+            list.add(viewModel)
+            index += 1
+        }
+
+        ldapConfigurations.value = list
     }
 }

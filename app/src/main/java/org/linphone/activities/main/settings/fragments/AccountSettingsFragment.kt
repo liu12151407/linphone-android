@@ -21,11 +21,11 @@ package org.linphone.activities.main.settings.fragments
 
 import android.os.Bundle
 import android.view.View
+import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.ViewModelProvider
 import org.linphone.R
 import org.linphone.activities.main.settings.viewmodels.AccountSettingsViewModel
 import org.linphone.activities.main.settings.viewmodels.AccountSettingsViewModelFactory
-import org.linphone.activities.navigateToEmptySetting
 import org.linphone.activities.navigateToPhoneLinking
 import org.linphone.core.tools.Log
 import org.linphone.databinding.SettingsAccountFragmentBinding
@@ -45,15 +45,12 @@ class AccountSettingsFragment : GenericSettingFragment<SettingsAccountFragmentBi
         val identity = arguments?.getString("Identity")
         if (identity == null) {
             Log.e("[Account Settings] Identity is null, aborting!")
-            // (activity as MainActivity).showSnackBar(R.string.error)
             goBack()
             return
         }
 
         try {
-            viewModel = ViewModelProvider(this, AccountSettingsViewModelFactory(identity)).get(
-                AccountSettingsViewModel::class.java
-            )
+            viewModel = ViewModelProvider(this, AccountSettingsViewModelFactory(identity))[AccountSettingsViewModel::class.java]
         } catch (nsee: NoSuchElementException) {
             Log.e("[Account Settings] Failed to find Account object, aborting!")
             goBack()
@@ -61,42 +58,43 @@ class AccountSettingsFragment : GenericSettingFragment<SettingsAccountFragmentBi
         }
         binding.viewModel = viewModel
 
-        binding.setBackClickListener { goBack() }
-
         viewModel.linkPhoneNumberEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    val authInfo = viewModel.account.findAuthInfo()
-                    if (authInfo == null) {
-                        Log.e("[Account Settings] Failed to find auth info for account ${viewModel.account}")
-                    } else {
-                        val args = Bundle()
-                        args.putString("Username", authInfo.username)
-                        args.putString("Password", authInfo.password)
-                        args.putString("HA1", authInfo.ha1)
-                        navigateToPhoneLinking(args)
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                val authInfo = viewModel.account.findAuthInfo()
+                if (authInfo == null) {
+                    Log.e("[Account Settings] Failed to find auth info for account ${viewModel.account}")
+                } else {
+                    val args = Bundle()
+                    args.putString("Username", authInfo.username)
+                    args.putString("Password", authInfo.password)
+                    args.putString("HA1", authInfo.ha1)
+                    navigateToPhoneLinking(args)
                 }
             }
-        )
+        }
 
         viewModel.accountRemovedEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    sharedViewModel.accountRemoved.value = true
-                    goBack()
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                sharedViewModel.accountRemoved.value = true
+                goBack()
             }
-        )
-    }
+        }
 
-    override fun goBack() {
-        if (sharedViewModel.isSlidingPaneSlideable.value == true) {
-            sharedViewModel.closeSlidingPaneEvent.value = Event(true)
-        } else {
-            navigateToEmptySetting()
+        viewModel.accountDefaultEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                sharedViewModel.defaultAccountChanged.value = true
+            }
+        }
+
+        view.doOnPreDraw {
+            // Notifies fragment is ready to be drawn
+            sharedViewModel.accountSettingsFragmentOpenedEvent.value = Event(true)
         }
     }
 }

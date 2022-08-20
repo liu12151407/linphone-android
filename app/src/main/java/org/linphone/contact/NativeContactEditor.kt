@@ -28,11 +28,12 @@ import android.provider.ContactsContract.RawContacts
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
 import org.linphone.activities.main.contact.data.NumberOrAddressEditorData
+import org.linphone.core.Friend
 import org.linphone.core.tools.Log
 import org.linphone.utils.AppUtils
 import org.linphone.utils.PermissionHelper
 
-class NativeContactEditor(val contact: NativeContact) {
+class NativeContactEditor(val friend: Friend) {
     companion object {
         fun createAndroidContact(accountName: String?, accountType: String?): Long {
             Log.i("[Native Contact Editor] Using sync account $accountName with type $accountType")
@@ -50,19 +51,23 @@ class NativeContactEditor(val contact: NativeContact) {
                 val uri = result.uri
                 Log.i("[Native Contact Editor] Contact creation result is $uri")
                 if (uri != null) {
-                    val cursor = contentResolver.query(
-                        uri,
-                        arrayOf(RawContacts.CONTACT_ID),
-                        null,
-                        null,
-                        null
-                    )
-                    if (cursor != null) {
-                        cursor.moveToNext()
-                        val contactId: Long = cursor.getLong(0)
-                        Log.i("[Native Contact Editor] New contact id is $contactId")
-                        cursor.close()
-                        return contactId
+                    try {
+                        val cursor = contentResolver.query(
+                            uri,
+                            arrayOf(RawContacts.CONTACT_ID),
+                            null,
+                            null,
+                            null
+                        )
+                        if (cursor != null) {
+                            cursor.moveToNext()
+                            val contactId: Long = cursor.getLong(0)
+                            Log.i("[Native Contact Editor] New contact id is $contactId")
+                            cursor.close()
+                            return contactId
+                        }
+                    } catch (e: Exception) {
+                        Log.e("[Native Contact Editor] Failed to get cursor: $e")
                     }
                 }
             }
@@ -90,14 +95,18 @@ class NativeContactEditor(val contact: NativeContact) {
             RawContacts.CONTENT_URI,
             arrayOf(RawContacts._ID),
             "${RawContacts.CONTACT_ID} =?",
-            arrayOf(contact.nativeId),
+            arrayOf(friend.refKey),
             null
         )
         if (cursor?.moveToFirst() == true) {
             do {
                 if (rawId == null) {
-                    rawId = cursor.getString(cursor.getColumnIndex(RawContacts._ID))
-                    Log.i("[Native Contact Editor] Found raw id $rawId for native contact with id ${contact.nativeId}")
+                    try {
+                        rawId = cursor.getString(cursor.getColumnIndexOrThrow(RawContacts._ID))
+                        Log.d("[Native Contact Editor] Found raw id $rawId for native contact with id ${friend.refKey}")
+                    } catch (iae: IllegalArgumentException) {
+                        Log.e("[Native Contact Editor] Exception: $iae")
+                    }
                 }
             } while (cursor.moveToNext() && rawId == null)
         }
@@ -105,12 +114,12 @@ class NativeContactEditor(val contact: NativeContact) {
     }
 
     fun setFirstAndLastNames(firstName: String, lastName: String): NativeContactEditor {
-        if (firstName == contact.firstName && lastName == contact.lastName) {
+        if (firstName == friend.vcard?.givenName && lastName == friend.vcard?.familyName) {
             Log.w("[Native Contact Editor] First & last names haven't changed")
             return this
         }
 
-        val builder = if (contact.firstName == null && contact.lastName == null) {
+        val builder = if (friend.vcard?.givenName == null && friend.vcard?.familyName == null) {
             // Probably a contact creation
             ContentProviderOperation.newInsert(contactUri)
                 .withValue(ContactsContract.Data.RAW_CONTACT_ID, rawId)
@@ -118,7 +127,7 @@ class NativeContactEditor(val contact: NativeContact) {
             ContentProviderOperation.newUpdate(contactUri)
                 .withSelection(
                     selection,
-                    arrayOf(contact.nativeId, CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                    arrayOf(friend.refKey, CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
                 )
         }
 
@@ -137,18 +146,18 @@ class NativeContactEditor(val contact: NativeContact) {
     }
 
     fun setOrganization(value: String): NativeContactEditor {
-        val previousValue = contact.organization
+        val previousValue = friend.vcard?.organization.orEmpty()
         if (value == previousValue) {
             Log.d("[Native Contact Editor] Organization hasn't changed")
             return this
         }
 
-        val builder = if (previousValue?.isNotEmpty() == true) {
+        val builder = if (previousValue.isNotEmpty()) {
             ContentProviderOperation.newUpdate(contactUri)
                 .withSelection(
                     "$selection AND ${CommonDataKinds.Organization.COMPANY} =?",
                     arrayOf(
-                        contact.nativeId,
+                        friend.refKey,
                         CommonDataKinds.Organization.CONTENT_ITEM_TYPE,
                         previousValue
                     )
@@ -253,16 +262,21 @@ class NativeContactEditor(val contact: NativeContact) {
                 RawContacts.CONTENT_URI,
                 arrayOf(RawContacts._ID, RawContacts.ACCOUNT_TYPE),
                 "${RawContacts.CONTACT_ID} =?",
-                arrayOf(contact.nativeId),
+                arrayOf(friend.refKey),
                 null
             )
             if (cursor?.moveToFirst() == true) {
                 do {
-                    val accountType =
-                        cursor.getString(cursor.getColumnIndex(RawContacts.ACCOUNT_TYPE))
-                    if (accountType == AppUtils.getString(R.string.sync_account_type) && syncAccountRawId == null) {
-                        syncAccountRawId = cursor.getString(cursor.getColumnIndex(RawContacts._ID))
-                        Log.d("[Native Contact Editor] Found linphone raw id $syncAccountRawId for native contact with id ${contact.nativeId}")
+                    try {
+                        val accountType =
+                            cursor.getString(cursor.getColumnIndexOrThrow(RawContacts.ACCOUNT_TYPE))
+                        if (accountType == AppUtils.getString(R.string.sync_account_type) && syncAccountRawId == null) {
+                            syncAccountRawId =
+                                cursor.getString(cursor.getColumnIndexOrThrow(RawContacts._ID))
+                            Log.d("[Native Contact Editor] Found linphone raw id $syncAccountRawId for native contact with id ${friend.refKey}")
+                        }
+                    } catch (iae: IllegalArgumentException) {
+                        Log.e("[Native Contact Editor] Exception: $iae")
                     }
                 } while (cursor.moveToNext() && syncAccountRawId == null)
             }
@@ -356,7 +370,7 @@ class NativeContactEditor(val contact: NativeContact) {
             .withSelection(
                 phoneNumberSelection,
                 arrayOf(
-                    contact.nativeId,
+                    friend.refKey,
                     CommonDataKinds.Phone.CONTENT_ITEM_TYPE,
                     currentValue,
                     currentValue
@@ -377,7 +391,7 @@ class NativeContactEditor(val contact: NativeContact) {
             .withSelection(
                 phoneNumberSelection,
                 arrayOf(
-                    contact.nativeId,
+                    friend.refKey,
                     CommonDataKinds.Phone.CONTENT_ITEM_TYPE,
                     phoneNumber,
                     phoneNumber
@@ -404,7 +418,7 @@ class NativeContactEditor(val contact: NativeContact) {
             .withSelection(
                 "${ContactsContract.Data.CONTACT_ID} =? AND ${ContactsContract.Data.MIMETYPE} =? AND data1=?",
                 arrayOf(
-                    contact.nativeId,
+                    friend.refKey,
                     AppUtils.getString(R.string.linphone_address_mime_type),
                     currentValue
                 )
@@ -418,7 +432,7 @@ class NativeContactEditor(val contact: NativeContact) {
             .withSelection(
                 "${ContactsContract.Data.CONTACT_ID} =? AND ${ContactsContract.Data.MIMETYPE} =? AND data1=?",
                 arrayOf(
-                    contact.nativeId,
+                    friend.refKey,
                     CommonDataKinds.SipAddress.CONTENT_ITEM_TYPE,
                     currentValue
                 )
@@ -435,7 +449,7 @@ class NativeContactEditor(val contact: NativeContact) {
             .withSelection(
                 "${ContactsContract.Data.CONTACT_ID} =? AND (${ContactsContract.Data.MIMETYPE} =? OR ${ContactsContract.Data.MIMETYPE} =?) AND data1=?",
                 arrayOf(
-                    contact.nativeId,
+                    friend.refKey,
                     CommonDataKinds.SipAddress.CONTENT_ITEM_TYPE,
                     AppUtils.getString(R.string.linphone_address_mime_type),
                     sipAddress
@@ -461,20 +475,28 @@ class NativeContactEditor(val contact: NativeContact) {
         val count = cursor?.count ?: 0
         val data1 = if (count > 0) {
             if (cursor?.moveToFirst() == true) {
-                cursor.getString(cursor.getColumnIndex("data1"))
+                try {
+                    cursor.getString(cursor.getColumnIndexOrThrow("data1"))
+                } catch (iae: IllegalArgumentException) {
+                    Log.e("[Native Contact Editor] Exception: $iae")
+                }
             } else null
         } else null
         cursor?.close()
 
+        val address = if (sipAddress.endsWith(";user=phone")) {
+            sipAddress.substring(0, sipAddress.length - ";user=phone".length)
+        } else sipAddress
+
         if (count == 0) {
-            Log.i("[Native Contact Editor] No existing presence information found for this phone number & SIP address, let's add it")
-            addPresenceLinphoneSipAddressForPhoneNumber(sipAddress, phoneNumber)
+            Log.i("[Native Contact Editor] No existing presence information found for this phone number ($phoneNumber) & SIP address ($address), let's add it")
+            addPresenceLinphoneSipAddressForPhoneNumber(address, phoneNumber)
         } else {
-            if (data1 != null && data1 == sipAddress) {
+            if (data1 != null && data1 == address) {
                 Log.d("[Native Contact Editor] There is already an entry for this phone number and SIP address, skipping")
             } else {
-                Log.w("[Native Contact Editor] There is already an entry for this phone number but not for the same SIP address")
-                updatePresenceLinphoneSipAddressForPhoneNumber(sipAddress, phoneNumber)
+                Log.w("[Native Contact Editor] There is already an entry for this phone number ($phoneNumber) but not for the same SIP address ($data1 != $address)")
+                updatePresenceLinphoneSipAddressForPhoneNumber(address, phoneNumber)
             }
         }
     }
@@ -501,7 +523,7 @@ class NativeContactEditor(val contact: NativeContact) {
             .withSelection(
                 presenceUpdateSelection,
                 arrayOf(
-                    contact.nativeId,
+                    friend.refKey,
                     AppUtils.getString(R.string.linphone_address_mime_type),
                     phoneNumber
                 )

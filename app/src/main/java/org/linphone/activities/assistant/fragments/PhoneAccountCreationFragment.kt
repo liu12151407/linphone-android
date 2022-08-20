@@ -30,8 +30,9 @@ import org.linphone.activities.assistant.viewmodels.SharedAssistantViewModel
 import org.linphone.activities.navigateToPhoneAccountValidation
 import org.linphone.databinding.AssistantPhoneAccountCreationFragmentBinding
 
-class PhoneAccountCreationFragment : AbstractPhoneFragment<AssistantPhoneAccountCreationFragmentBinding>() {
-    private lateinit var sharedViewModel: SharedAssistantViewModel
+class PhoneAccountCreationFragment :
+    AbstractPhoneFragment<AssistantPhoneAccountCreationFragmentBinding>() {
+    private lateinit var sharedAssistantViewModel: SharedAssistantViewModel
     override lateinit var viewModel: PhoneAccountCreationViewModel
 
     override fun getLayoutId(): Int = R.layout.assistant_phone_account_creation_fragment
@@ -41,11 +42,14 @@ class PhoneAccountCreationFragment : AbstractPhoneFragment<AssistantPhoneAccount
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedAssistantViewModel::class.java)
+        sharedAssistantViewModel = requireActivity().run {
+            ViewModelProvider(this)[SharedAssistantViewModel::class.java]
         }
 
-        viewModel = ViewModelProvider(this, PhoneAccountCreationViewModelFactory(sharedViewModel.getAccountCreator())).get(PhoneAccountCreationViewModel::class.java)
+        viewModel = ViewModelProvider(
+            this,
+            PhoneAccountCreationViewModelFactory(sharedAssistantViewModel.getAccountCreator())
+        )[PhoneAccountCreationViewModel::class.java]
         binding.viewModel = viewModel
 
         binding.setInfoClickListener {
@@ -57,26 +61,24 @@ class PhoneAccountCreationFragment : AbstractPhoneFragment<AssistantPhoneAccount
         }
 
         viewModel.goToSmsValidationEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    val args = Bundle()
-                    args.putBoolean("IsCreation", true)
-                    args.putString("PhoneNumber", viewModel.accountCreator.phoneNumber)
-                    navigateToPhoneAccountValidation(args)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                val args = Bundle()
+                args.putBoolean("IsCreation", true)
+                args.putString("PhoneNumber", viewModel.accountCreator.phoneNumber)
+                navigateToPhoneAccountValidation(args)
             }
-        )
+        }
 
         viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { message ->
-                    (requireActivity() as AssistantActivity).showSnackBar(message)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { message ->
+                (requireActivity() as AssistantActivity).showSnackBar(message)
             }
-        )
+        }
 
-        checkPermission()
+        checkPermissions()
     }
 }

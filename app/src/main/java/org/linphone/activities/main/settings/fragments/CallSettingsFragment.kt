@@ -19,7 +19,6 @@
  */
 package org.linphone.activities.main.settings.fragments
 
-import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -31,14 +30,11 @@ import androidx.lifecycle.ViewModelProvider
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.activities.main.settings.viewmodels.CallSettingsViewModel
-import org.linphone.activities.navigateToEmptySetting
 import org.linphone.compatibility.Compatibility
 import org.linphone.core.tools.Log
 import org.linphone.databinding.SettingsCallFragmentBinding
 import org.linphone.mediastream.Version
 import org.linphone.telecom.TelecomHelper
-import org.linphone.utils.Event
-import org.linphone.utils.PermissionHelper
 
 class CallSettingsFragment : GenericSettingFragment<SettingsCallFragmentBinding>() {
     private lateinit var viewModel: CallSettingsViewModel
@@ -51,84 +47,87 @@ class CallSettingsFragment : GenericSettingFragment<SettingsCallFragmentBinding>
         binding.lifecycleOwner = viewLifecycleOwner
         binding.sharedMainViewModel = sharedViewModel
 
-        viewModel = ViewModelProvider(this).get(CallSettingsViewModel::class.java)
+        viewModel = ViewModelProvider(this)[CallSettingsViewModel::class.java]
         binding.viewModel = viewModel
 
-        binding.setBackClickListener { goBack() }
-
         viewModel.systemWideOverlayEnabledEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    if (!Compatibility.canDrawOverlay(requireContext())) {
-                        val intent = Intent("android.settings.action.MANAGE_OVERLAY_PERMISSION", Uri.parse("package:${requireContext().packageName}"))
-                        startActivityForResult(intent, 0)
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                if (!Compatibility.canDrawOverlay(requireContext())) {
+                    val intent = Intent(
+                        "android.settings.action.MANAGE_OVERLAY_PERMISSION",
+                        Uri.parse("package:${requireContext().packageName}")
+                    )
+                    startActivityForResult(intent, 0)
                 }
             }
-        )
+        }
 
         viewModel.goToAndroidNotificationSettingsEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    if (Build.VERSION.SDK_INT >= Version.API26_O_80) {
-                        val i = Intent()
-                        i.action = Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS
-                        i.putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
-                        i.putExtra(
-                            Settings.EXTRA_CHANNEL_ID,
-                            getString(R.string.notification_channel_service_id)
-                        )
-                        i.addCategory(Intent.CATEGORY_DEFAULT)
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        i.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
-                        i.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
-                        startActivity(i)
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                if (Build.VERSION.SDK_INT >= Version.API26_O_80) {
+                    val i = Intent()
+                    i.action = Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS
+                    i.putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
+                    i.putExtra(
+                        Settings.EXTRA_CHANNEL_ID,
+                        getString(R.string.notification_channel_service_id)
+                    )
+                    i.addCategory(Intent.CATEGORY_DEFAULT)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+                    i.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                    startActivity(i)
                 }
             }
-        )
+        }
 
         viewModel.enableTelecomManagerEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    if (!PermissionHelper.get().hasTelecomManagerPermissions()) {
-                        val permissions = arrayOf(
-                            Manifest.permission.READ_PHONE_STATE,
-                            Manifest.permission.MANAGE_OWN_CALLS
-                        )
-                        requestPermissions(permissions, 1)
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                if (requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_CONNECTION_SERVICE)) {
+                    if (!Compatibility.hasTelecomManagerPermissions(requireContext())) {
+                        Compatibility.requestTelecomManagerPermissions(requireActivity(), 1)
                     } else if (!TelecomHelper.exists()) {
+                        corePreferences.useTelecomManager = true
                         Log.w("[Telecom Helper] Doesn't exists yet, creating it")
-                        TelecomHelper.create(requireContext())
+                        if (requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_CONNECTION_SERVICE)) {
+                            TelecomHelper.create(requireContext())
+                            updateTelecomManagerAccount()
+                        } else {
+                            Log.e("[Telecom Helper] Telecom Helper can't be created, device doesn't support connection service")
+                        }
                     }
+                } else {
+                    Log.e("[Telecom Helper] Telecom Helper can't be created, device doesn't support connection service!")
                 }
             }
-        )
+        }
 
         viewModel.goToAndroidNotificationSettingsEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    if (Build.VERSION.SDK_INT >= Version.API26_O_80) {
-                        val i = Intent()
-                        i.action = Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS
-                        i.putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
-                        i.putExtra(
-                            Settings.EXTRA_CHANNEL_ID,
-                            getString(R.string.notification_channel_service_id)
-                        )
-                        i.addCategory(Intent.CATEGORY_DEFAULT)
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        i.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
-                        i.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
-                        startActivity(i)
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                if (Build.VERSION.SDK_INT >= Version.API26_O_80) {
+                    val i = Intent()
+                    i.action = Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS
+                    i.putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
+                    i.putExtra(
+                        Settings.EXTRA_CHANNEL_ID,
+                        getString(R.string.notification_channel_service_id)
+                    )
+                    i.addCategory(Intent.CATEGORY_DEFAULT)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+                    i.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                    startActivity(i)
                 }
             }
-        )
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -139,7 +138,11 @@ class CallSettingsFragment : GenericSettingFragment<SettingsCallFragmentBinding>
         } else if (requestCode == 1) {
             if (!TelecomHelper.exists()) {
                 Log.w("[Telecom Helper] Doesn't exists yet, creating it")
-                TelecomHelper.create(requireContext())
+                if (requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_CONNECTION_SERVICE)) {
+                    TelecomHelper.create(requireContext())
+                } else {
+                    Log.e("[Telecom Helper] Telecom Helper can't be created, device doesn't support connection service")
+                }
             }
             updateTelecomManagerAccount()
         }
@@ -154,16 +157,9 @@ class CallSettingsFragment : GenericSettingFragment<SettingsCallFragmentBinding>
         val account = TelecomHelper.get().findExistingAccount(requireContext())
         TelecomHelper.get().updateAccount(account)
         val enabled = TelecomHelper.get().isAccountEnabled()
+        Log.i("[Call Settings] Telecom Manager is ${if (enabled) "enabled" else "disabled"}")
         viewModel.useTelecomManager.value = enabled
         corePreferences.useTelecomManager = enabled
-    }
-
-    override fun goBack() {
-        if (sharedViewModel.isSlidingPaneSlideable.value == true) {
-            sharedViewModel.closeSlidingPaneEvent.value = Event(true)
-        } else {
-            navigateToEmptySetting()
-        }
     }
 
     override fun onRequestPermissionsResult(
@@ -181,6 +177,11 @@ class CallSettingsFragment : GenericSettingFragment<SettingsCallFragmentBinding>
             }
         }
 
-        TelecomHelper.create(requireContext())
+        if (requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_CONNECTION_SERVICE)) {
+            TelecomHelper.create(requireContext())
+            updateTelecomManagerAccount()
+        } else {
+            Log.e("[Telecom Helper] Telecom Helper can't be created, device doesn't support connection service")
+        }
     }
 }

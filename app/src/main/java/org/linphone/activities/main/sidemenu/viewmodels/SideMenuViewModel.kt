@@ -26,12 +26,15 @@ import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.activities.main.settings.SettingListenerStub
 import org.linphone.activities.main.settings.viewmodels.AccountSettingsViewModel
 import org.linphone.core.*
+import org.linphone.utils.LinphoneUtils
 
 class SideMenuViewModel : ViewModel() {
     val showAccounts: Boolean = corePreferences.showAccountsInSideMenu
     val showAssistant: Boolean = corePreferences.showAssistantInSideMenu
     val showSettings: Boolean = corePreferences.showSettingsInSideMenu
     val showRecordings: Boolean = corePreferences.showRecordingsInSideMenu
+    val showScheduledConferences: Boolean = corePreferences.showScheduledConferencesInSideMenu &&
+        LinphoneUtils.isRemoteConferencingAvailable()
     val showAbout: Boolean = corePreferences.showAboutInSideMenu
     val showQuit: Boolean = corePreferences.showQuitInSideMenu
 
@@ -51,7 +54,9 @@ class SideMenuViewModel : ViewModel() {
             message: String
         ) {
             // +1 is for the default account, otherwise this will trigger every time
-            if (coreContext.core.accountList.size != accounts.value.orEmpty().size + 1) {
+            if (accounts.value.isNullOrEmpty() ||
+                coreContext.core.accountList.size != accounts.value.orEmpty().size + 1
+            ) {
                 // Only refresh the list if an account has been added or removed
                 updateAccountsList()
             }
@@ -78,29 +83,27 @@ class SideMenuViewModel : ViewModel() {
         accounts.value.orEmpty().forEach(AccountSettingsViewModel::destroy)
 
         val list = arrayListOf<AccountSettingsViewModel>()
-        if (coreContext.core.accountList.isNotEmpty()) {
-            val defaultAccount = coreContext.core.defaultAccount
-            if (defaultAccount != null) {
-                val defaultViewModel = AccountSettingsViewModel(defaultAccount)
-                defaultViewModel.accountsSettingsListener = object : SettingListenerStub() {
+        val defaultAccount = coreContext.core.defaultAccount
+        if (defaultAccount != null) {
+            val defaultViewModel = AccountSettingsViewModel(defaultAccount)
+            defaultViewModel.accountsSettingsListener = object : SettingListenerStub() {
+                override fun onAccountClicked(identity: String) {
+                    accountsSettingsListener.onAccountClicked(identity)
+                }
+            }
+            defaultAccountViewModel.value = defaultViewModel
+            defaultAccountFound.value = true
+        }
+
+        for (account in LinphoneUtils.getAccountsNotHidden()) {
+            if (account != coreContext.core.defaultAccount) {
+                val viewModel = AccountSettingsViewModel(account)
+                viewModel.accountsSettingsListener = object : SettingListenerStub() {
                     override fun onAccountClicked(identity: String) {
                         accountsSettingsListener.onAccountClicked(identity)
                     }
                 }
-                defaultAccountViewModel.value = defaultViewModel
-                defaultAccountFound.value = true
-            }
-
-            for (account in coreContext.core.accountList) {
-                if (account != coreContext.core.defaultAccount) {
-                    val viewModel = AccountSettingsViewModel(account)
-                    viewModel.accountsSettingsListener = object : SettingListenerStub() {
-                        override fun onAccountClicked(identity: String) {
-                            accountsSettingsListener.onAccountClicked(identity)
-                        }
-                    }
-                    list.add(viewModel)
-                }
+                list.add(viewModel)
             }
         }
         accounts.value = list

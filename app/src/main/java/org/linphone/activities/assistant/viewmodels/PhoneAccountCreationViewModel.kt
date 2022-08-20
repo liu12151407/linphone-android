@@ -36,7 +36,7 @@ class PhoneAccountCreationViewModelFactory(private val accountCreator: AccountCr
     ViewModelProvider.NewInstanceFactory() {
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return PhoneAccountCreationViewModel(accountCreator) as T
     }
 }
@@ -45,6 +45,8 @@ class PhoneAccountCreationViewModel(accountCreator: AccountCreator) : AbstractPh
     val username = MutableLiveData<String>()
     val useUsername = MutableLiveData<Boolean>()
     val usernameError = MutableLiveData<String>()
+
+    val displayName = MutableLiveData<String>()
 
     val createEnabled: MediatorLiveData<Boolean> = MediatorLiveData()
 
@@ -141,6 +143,7 @@ class PhoneAccountCreationViewModel(accountCreator: AccountCreator) : AbstractPh
     }
 
     fun create() {
+        accountCreator.displayName = displayName.value
         accountCreator.setPhoneNumber(phoneNumber.value, prefix.value)
         if (useUsername.value == true) {
             accountCreator.username = username.value

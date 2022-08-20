@@ -36,6 +36,7 @@ import org.linphone.activities.main.chat.fragments.ChatRoomCreationFragment
 import org.linphone.activities.main.chat.fragments.DetailChatRoomFragment
 import org.linphone.activities.main.chat.fragments.GroupInfoFragment
 import org.linphone.activities.main.chat.fragments.MasterChatRoomsFragment
+import org.linphone.activities.main.conference.fragments.*
 import org.linphone.activities.main.contact.fragments.ContactEditorFragment
 import org.linphone.activities.main.contact.fragments.DetailContactFragment
 import org.linphone.activities.main.contact.fragments.MasterContactsFragment
@@ -45,8 +46,8 @@ import org.linphone.activities.main.history.fragments.DetailCallLogFragment
 import org.linphone.activities.main.history.fragments.MasterCallLogsFragment
 import org.linphone.activities.main.settings.fragments.*
 import org.linphone.activities.main.sidemenu.fragments.SideMenuFragment
-import org.linphone.contact.NativeContact
-import org.linphone.core.Address
+import org.linphone.activities.voip.CallActivity
+import org.linphone.activities.voip.fragments.*
 
 internal fun Fragment.findMasterNavController(): NavController {
     return parentFragment?.parentFragment?.findNavController() ?: findNavController()
@@ -72,6 +73,30 @@ internal fun MainActivity.navigateToDialer(args: Bundle?) {
     )
 }
 
+internal fun MainActivity.navigateToChatRooms(args: Bundle? = null) {
+    findNavController(R.id.nav_host_fragment).navigate(
+        R.id.action_global_masterChatRoomsFragment,
+        args,
+        popupTo(R.id.masterChatRoomsFragment, true)
+    )
+}
+
+internal fun MainActivity.navigateToChatRoom(localAddress: String?, peerAddress: String?) {
+    val deepLink = "linphone-android://chat-room/$localAddress/$peerAddress"
+    findNavController(R.id.nav_host_fragment).navigate(
+        Uri.parse(deepLink),
+        popupTo(R.id.masterChatRoomsFragment, true)
+    )
+}
+
+internal fun MainActivity.navigateToContact(contactId: String?) {
+    val deepLink = "linphone-android://contact/view/$contactId"
+    findNavController(R.id.nav_host_fragment).navigate(
+        Uri.parse(deepLink),
+        popupTo(R.id.masterContactsFragment, true)
+    )
+}
+
 /* Tabs fragment related */
 
 internal fun TabsFragment.navigateToCallHistory() {
@@ -79,9 +104,8 @@ internal fun TabsFragment.navigateToCallHistory() {
         R.id.masterContactsFragment -> R.id.action_masterContactsFragment_to_masterCallLogsFragment
         R.id.dialerFragment -> R.id.action_dialerFragment_to_masterCallLogsFragment
         R.id.masterChatRoomsFragment -> R.id.action_masterChatRoomsFragment_to_masterCallLogsFragment
-        else -> 0
+        else -> R.id.action_global_masterCallLogsFragment
     }
-    if (action == 0) return
     findNavController().navigate(
         action,
         null,
@@ -94,9 +118,8 @@ internal fun TabsFragment.navigateToContacts() {
         R.id.masterCallLogsFragment -> R.id.action_masterCallLogsFragment_to_masterContactsFragment
         R.id.dialerFragment -> R.id.action_dialerFragment_to_masterContactsFragment
         R.id.masterChatRoomsFragment -> R.id.action_masterChatRoomsFragment_to_masterContactsFragment
-        else -> 0
+        else -> R.id.action_global_masterContactsFragment
     }
-    if (action == 0) return
     findNavController().navigate(
         action,
         null,
@@ -109,9 +132,8 @@ internal fun TabsFragment.navigateToDialer() {
         R.id.masterCallLogsFragment -> R.id.action_masterCallLogsFragment_to_dialerFragment
         R.id.masterContactsFragment -> R.id.action_masterContactsFragment_to_dialerFragment
         R.id.masterChatRoomsFragment -> R.id.action_masterChatRoomsFragment_to_dialerFragment
-        else -> 0
+        else -> R.id.action_global_dialerFragment
     }
-    if (action == 0) return
     findNavController().navigate(
         action,
         null,
@@ -124,9 +146,8 @@ internal fun TabsFragment.navigateToChatRooms() {
         R.id.masterCallLogsFragment -> R.id.action_masterCallLogsFragment_to_masterChatRoomsFragment
         R.id.masterContactsFragment -> R.id.action_masterContactsFragment_to_masterChatRoomsFragment
         R.id.dialerFragment -> R.id.action_dialerFragment_to_masterChatRoomsFragment
-        else -> 0
+        else -> R.id.action_global_masterChatRoomsFragment
     }
-    if (action == 0) return
     findNavController().navigate(
         action,
         null,
@@ -153,21 +174,100 @@ internal fun DialerFragment.navigateToConfigFileViewer() {
     )
 }
 
+internal fun DialerFragment.navigateToConferenceScheduling() {
+    findMasterNavController().navigate(
+        R.id.action_global_conferenceSchedulingFragment,
+        null,
+        popupTo()
+    )
+}
+
+/* Conference scheduling related */
+
+internal fun ConferenceSchedulingFragment.navigateToParticipantsList() {
+    if (findNavController().currentDestination?.id == R.id.conferenceSchedulingFragment) {
+        findNavController().navigate(
+            R.id.action_conferenceSchedulingFragment_to_conferenceSchedulingParticipantsListFragment,
+            null,
+            popupTo(R.id.conferenceSchedulingParticipantsListFragment, true)
+        )
+    }
+}
+
+internal fun ConferenceSchedulingParticipantsListFragment.navigateToSummary() {
+    if (findNavController().currentDestination?.id == R.id.conferenceSchedulingParticipantsListFragment) {
+        findNavController().navigate(
+            R.id.action_conferenceSchedulingParticipantsListFragment_to_conferenceSchedulingSummaryFragment,
+            null,
+            popupTo(R.id.conferenceSchedulingSummaryFragment, true)
+        )
+    }
+}
+
+internal fun ConferenceSchedulingSummaryFragment.navigateToScheduledConferences() {
+    if (findNavController().currentDestination?.id == R.id.conferenceSchedulingSummaryFragment) {
+        findNavController().navigate(
+            R.id.action_global_scheduledConferencesFragment,
+            null,
+            popupTo(R.id.dialerFragment, false)
+        )
+    }
+}
+
+internal fun ConferenceSchedulingSummaryFragment.navigateToDialer() {
+    val bundle = Bundle()
+    findMasterNavController().navigate(
+        R.id.action_global_dialerFragment,
+        bundle,
+        popupTo(R.id.dialerFragment, false)
+    )
+}
+
+internal fun DetailChatRoomFragment.navigateToConferenceWaitingRoom(
+    address: String,
+    subject: String?
+) {
+    val bundle = Bundle()
+    bundle.putString("Address", address)
+    bundle.putString("Subject", subject)
+    findMasterNavController().navigate(
+        R.id.action_global_conferenceWaitingRoomFragment,
+        bundle,
+        popupTo(R.id.conferenceWaitingRoomFragment, true)
+    )
+}
+
+internal fun ScheduledConferencesFragment.navigateToConferenceWaitingRoom(
+    address: String,
+    subject: String?
+) {
+    val bundle = Bundle()
+    bundle.putString("Address", address)
+    bundle.putString("Subject", subject)
+    findMasterNavController().navigate(
+        R.id.action_global_conferenceWaitingRoomFragment,
+        bundle,
+        popupTo(R.id.conferenceWaitingRoomFragment, true)
+    )
+}
+
+internal fun ScheduledConferencesFragment.navigateToConferenceScheduling() {
+    findMasterNavController().navigate(
+        R.id.action_global_conferenceSchedulingFragment,
+        null,
+        popupTo(R.id.conferenceSchedulingFragment, true)
+    )
+}
+
 /* Chat related */
 
 internal fun MasterChatRoomsFragment.navigateToChatRoom(args: Bundle) {
     val navHostFragment =
         childFragmentManager.findFragmentById(R.id.chat_nav_container) as NavHostFragment
-    val previousBackStackEntry = navHostFragment.navController.currentBackStackEntry
-    val popUpToFragmentId = when (previousBackStackEntry?.destination?.id) {
-        R.id.detailChatRoomFragment -> R.id.detailChatRoomFragment
-        R.id.chatRoomCreationFragment -> R.id.chatRoomCreationFragment
-        else -> R.id.emptyChatFragment
-    }
     navHostFragment.navController.navigate(
         R.id.action_global_detailChatRoomFragment,
         args,
-        popupTo(popUpToFragmentId, true)
+        popupTo(R.id.emptyChatFragment, false)
     )
 }
 
@@ -178,16 +278,10 @@ internal fun MasterChatRoomsFragment.navigateToChatRoomCreation(
     val bundle = bundleOf("createGroup" to createGroupChatRoom)
     val navHostFragment =
         childFragmentManager.findFragmentById(R.id.chat_nav_container) as NavHostFragment
-    val previousBackStackEntry = navHostFragment.navController.currentBackStackEntry
-    val popUpToFragmentId = when (previousBackStackEntry?.destination?.id) {
-        R.id.detailChatRoomFragment -> R.id.detailChatRoomFragment
-        R.id.chatRoomCreationFragment -> R.id.chatRoomCreationFragment
-        else -> R.id.emptyChatFragment
-    }
     navHostFragment.navController.navigate(
         R.id.action_global_chatRoomCreationFragment,
         bundle,
-        popupTo(popUpToFragmentId, true)
+        popupTo(R.id.emptyChatFragment, false)
     )
     if (!slidingPane.isOpen) slidingPane.openPane()
 }
@@ -206,6 +300,11 @@ internal fun MasterChatRoomsFragment.clearDisplayedChatRoom() {
 
 internal fun DetailChatRoomFragment.navigateToContacts(sipUriToAdd: String) {
     val deepLink = "linphone-android://contact/new/$sipUriToAdd"
+    findMasterNavController().navigate(Uri.parse(deepLink))
+}
+
+internal fun DetailChatRoomFragment.navigateToContact(id: String) {
+    val deepLink = "linphone-android://contact/view/$id"
     findMasterNavController().navigate(Uri.parse(deepLink))
 }
 
@@ -298,7 +397,15 @@ internal fun DetailChatRoomFragment.navigateToEmptyChatRoom() {
     findNavController().navigate(
         R.id.action_global_emptyChatFragment,
         null,
-        popupTo(R.id.emptyChatFragment, true)
+        popupTo(R.id.detailChatRoomFragment, true)
+    )
+}
+
+internal fun DetailChatRoomFragment.navigateToDialer(args: Bundle?) {
+    findMasterNavController().navigate(
+        R.id.action_global_dialerFragment,
+        args,
+        popupTo(R.id.dialerFragment, true)
     )
 }
 
@@ -317,17 +424,9 @@ internal fun ChatRoomCreationFragment.navigateToChatRoom(args: Bundle) {
         findNavController().navigate(
             R.id.action_chatRoomCreationFragment_to_detailChatRoomFragment,
             args,
-            popupTo(R.id.detailChatRoomFragment, true)
+            popupTo(R.id.emptyChatFragment, false)
         )
     }
-}
-
-internal fun ChatRoomCreationFragment.navigateToEmptyChatRoom() {
-    findNavController().navigate(
-        R.id.action_global_emptyChatFragment,
-        null,
-        popupTo(R.id.emptyChatFragment, true)
-    )
 }
 
 internal fun GroupInfoFragment.navigateToChatRoomCreation(args: Bundle?) {
@@ -340,12 +439,17 @@ internal fun GroupInfoFragment.navigateToChatRoomCreation(args: Bundle?) {
     }
 }
 
-internal fun GroupInfoFragment.navigateToChatRoom(args: Bundle?) {
+internal fun GroupInfoFragment.navigateToChatRoom(args: Bundle?, created: Boolean) {
     if (findNavController().currentDestination?.id == R.id.groupInfoFragment) {
+        val popUpToFragmentId = if (created) { // To remove all creation fragments from back stack
+            R.id.chatRoomCreationFragment
+        } else {
+            R.id.detailChatRoomFragment
+        }
         findNavController().navigate(
             R.id.action_groupInfoFragment_to_detailChatRoomFragment,
             args,
-            popupTo(R.id.detailChatRoomFragment, true)
+            popupTo(popUpToFragmentId, true)
         )
     }
 }
@@ -356,16 +460,10 @@ internal fun MasterContactsFragment.navigateToContact() {
     if (findNavController().currentDestination?.id == R.id.masterContactsFragment) {
         val navHostFragment =
             childFragmentManager.findFragmentById(R.id.contacts_nav_container) as NavHostFragment
-        val previousBackStackEntry = navHostFragment.navController.currentBackStackEntry
-        val popUpToFragmentId = when (previousBackStackEntry?.destination?.id) {
-            R.id.detailContactFragment -> R.id.detailContactFragment
-            R.id.contactEditorFragment -> R.id.contactEditorFragment
-            else -> R.id.emptyContactFragment
-        }
         navHostFragment.navController.navigate(
             R.id.action_global_detailContactFragment,
             null,
-            popupTo(popUpToFragmentId, true)
+            popupTo(R.id.emptyContactFragment, false)
         )
     }
 }
@@ -381,7 +479,7 @@ internal fun MasterContactsFragment.navigateToContactEditor(
         navHostFragment.navController.navigate(
             R.id.action_global_contactEditorFragment,
             bundle,
-            popupTo(R.id.emptyContactFragment, true)
+            popupTo(R.id.emptyContactFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -399,21 +497,13 @@ internal fun MasterContactsFragment.clearDisplayedContact() {
     }
 }
 
-internal fun ContactEditorFragment.navigateToContact(contact: NativeContact) {
+internal fun ContactEditorFragment.navigateToContact(id: String) {
     val bundle = Bundle()
-    bundle.putString("id", contact.nativeId)
+    bundle.putString("id", id)
     findNavController().navigate(
         R.id.action_contactEditorFragment_to_detailContactFragment,
         bundle,
         popupTo(R.id.contactEditorFragment, true)
-    )
-}
-
-internal fun ContactEditorFragment.navigateToEmptyContact() {
-    findNavController().navigate(
-        R.id.action_global_emptyContactFragment,
-        null,
-        popupTo(R.id.emptyContactFragment, true)
     )
 }
 
@@ -443,14 +533,6 @@ internal fun DetailContactFragment.navigateToContactEditor() {
     }
 }
 
-internal fun DetailContactFragment.navigateToEmptyContact() {
-    findNavController().navigate(
-        R.id.action_global_emptyContactFragment,
-        null,
-        popupTo(R.id.emptyContactFragment, true)
-    )
-}
-
 /* History related */
 
 internal fun MasterCallLogsFragment.navigateToCallHistory(slidingPane: SlidingPaneLayout) {
@@ -460,7 +542,20 @@ internal fun MasterCallLogsFragment.navigateToCallHistory(slidingPane: SlidingPa
         navHostFragment.navController.navigate(
             R.id.action_global_detailCallLogFragment,
             null,
-            popupTo(R.id.detailCallLogFragment, true)
+            popupTo(R.id.emptyCallHistoryFragment, false)
+        )
+        if (!slidingPane.isOpen) slidingPane.openPane()
+    }
+}
+
+internal fun MasterCallLogsFragment.navigateToConferenceCallHistory(slidingPane: SlidingPaneLayout) {
+    if (findNavController().currentDestination?.id == R.id.masterCallLogsFragment) {
+        val navHostFragment =
+            childFragmentManager.findFragmentById(R.id.history_nav_container) as NavHostFragment
+        navHostFragment.navController.navigate(
+            R.id.action_global_detailConferenceCallLogFragment,
+            null,
+            popupTo(R.id.emptyCallHistoryFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -486,18 +581,27 @@ internal fun MasterCallLogsFragment.navigateToDialer(args: Bundle?) {
     )
 }
 
+internal fun MasterCallLogsFragment.navigateToConferenceWaitingRoom(
+    address: String,
+    subject: String?
+) {
+    val bundle = Bundle()
+    bundle.putString("Address", address)
+    bundle.putString("Subject", subject)
+    findMasterNavController().navigate(
+        R.id.action_global_conferenceWaitingRoomFragment,
+        bundle,
+        popupTo(R.id.conferenceWaitingRoomFragment, true)
+    )
+}
+
 internal fun DetailCallLogFragment.navigateToContacts(sipUriToAdd: String) {
     val deepLink = "linphone-android://contact/new/$sipUriToAdd"
     findMasterNavController().navigate(Uri.parse(deepLink))
 }
 
-internal fun DetailCallLogFragment.navigateToContact(contact: NativeContact) {
-    val deepLink = "linphone-android://contact/view/${contact.nativeId}"
-    findMasterNavController().navigate(Uri.parse(deepLink))
-}
-
-internal fun DetailCallLogFragment.navigateToFriend(friendAddress: Address) {
-    val deepLink = "linphone-android://contact/new/${friendAddress.asStringUriOnly()}"
+internal fun DetailCallLogFragment.navigateToContact(id: String) {
+    val deepLink = "linphone-android://contact/view/$id"
     findMasterNavController().navigate(Uri.parse(deepLink))
 }
 
@@ -521,22 +625,9 @@ internal fun DetailCallLogFragment.navigateToDialer(args: Bundle?) {
     }
 }
 
-internal fun DetailCallLogFragment.navigateToEmptyCallHistory() {
-    if (findNavController().currentDestination?.id == R.id.detailCallLogFragment) {
-        findNavController().navigate(
-            R.id.action_global_emptyFragment,
-            null,
-            popupTo(R.id.emptyCallHistoryFragment, true)
-        )
-    }
-}
-
 /* Settings related */
 
-internal fun SettingsFragment.navigateToAccountSettings(
-    identity: String,
-    slidingPane: SlidingPaneLayout
-) {
+internal fun SettingsFragment.navigateToAccountSettings(identity: String) {
     if (findNavController().currentDestination?.id == R.id.settingsFragment) {
         val bundle = bundleOf("Identity" to identity)
         val navHostFragment =
@@ -544,9 +635,8 @@ internal fun SettingsFragment.navigateToAccountSettings(
         navHostFragment.navController.navigate(
             R.id.action_global_accountSettingsFragment,
             bundle,
-            popupTo(R.id.accountSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
-        if (!slidingPane.isOpen) slidingPane.openPane()
     }
 }
 
@@ -557,7 +647,7 @@ internal fun SettingsFragment.navigateToTunnelSettings(slidingPane: SlidingPaneL
         navHostFragment.navController.navigate(
             R.id.action_global_tunnelSettingsFragment,
             null,
-            popupTo(R.id.tunnelSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -570,7 +660,7 @@ internal fun SettingsFragment.navigateToAudioSettings(slidingPane: SlidingPaneLa
         navHostFragment.navController.navigate(
             R.id.action_global_audioSettingsFragment,
             null,
-            popupTo(R.id.audioSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -583,7 +673,7 @@ internal fun SettingsFragment.navigateToVideoSettings(slidingPane: SlidingPaneLa
         navHostFragment.navController.navigate(
             R.id.action_global_videoSettingsFragment,
             null,
-            popupTo(R.id.videoSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -596,7 +686,7 @@ internal fun SettingsFragment.navigateToCallSettings(slidingPane: SlidingPaneLay
         navHostFragment.navController.navigate(
             R.id.action_global_callSettingsFragment,
             null,
-            popupTo(R.id.callSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -609,7 +699,7 @@ internal fun SettingsFragment.navigateToChatSettings(slidingPane: SlidingPaneLay
         navHostFragment.navController.navigate(
             R.id.action_global_chatSettingsFragment,
             null,
-            popupTo(R.id.chatSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -622,7 +712,7 @@ internal fun SettingsFragment.navigateToNetworkSettings(slidingPane: SlidingPane
         navHostFragment.navController.navigate(
             R.id.action_global_networkSettingsFragment,
             null,
-            popupTo(R.id.networkSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -635,7 +725,7 @@ internal fun SettingsFragment.navigateToContactsSettings(slidingPane: SlidingPan
         navHostFragment.navController.navigate(
             R.id.action_global_contactsSettingsFragment,
             null,
-            popupTo(R.id.contactsSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -648,7 +738,20 @@ internal fun SettingsFragment.navigateToAdvancedSettings(slidingPane: SlidingPan
         navHostFragment.navController.navigate(
             R.id.action_global_advancedSettingsFragment,
             null,
-            popupTo(R.id.advancedSettingsFragment, true)
+            popupTo(R.id.emptySettingsFragment, false)
+        )
+        if (!slidingPane.isOpen) slidingPane.openPane()
+    }
+}
+
+internal fun SettingsFragment.navigateToConferencesSettings(slidingPane: SlidingPaneLayout) {
+    if (findNavController().currentDestination?.id == R.id.settingsFragment) {
+        val navHostFragment =
+            childFragmentManager.findFragmentById(R.id.settings_nav_container) as NavHostFragment
+        navHostFragment.navController.navigate(
+            R.id.action_global_conferencesSettingsFragment,
+            null,
+            popupTo(R.id.emptySettingsFragment, false)
         )
         if (!slidingPane.isOpen) slidingPane.openPane()
     }
@@ -682,40 +785,15 @@ internal fun navigateToEmptySetting(navController: NavController) {
     )
 }
 
-internal fun AccountSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun AdvancedSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun AudioSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun CallSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun ChatSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun ContactsSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun NetworkSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun TunnelSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
-}
-
-internal fun VideoSettingsFragment.navigateToEmptySetting() {
-    navigateToEmptySetting(findNavController())
+internal fun ContactsSettingsFragment.navigateToLdapSettings(configIndex: Int) {
+    if (findNavController().currentDestination?.id == R.id.contactsSettingsFragment) {
+        val bundle = bundleOf("LdapConfigIndex" to configIndex)
+        findNavController().navigate(
+            R.id.action_contactsSettingsFragment_to_ldapSettingsFragment,
+            bundle,
+            popupTo()
+        )
+    }
 }
 
 /* Side menu related */
@@ -747,6 +825,150 @@ internal fun SideMenuFragment.navigateToRecordings() {
         null,
         popupTo(R.id.recordingsFragment, true)
     )
+}
+
+internal fun SideMenuFragment.navigateToScheduledConferences() {
+    findNavController().navigate(
+        R.id.action_global_scheduledConferencesFragment,
+        null,
+        popupTo(R.id.scheduledConferencesFragment, true)
+    )
+}
+
+/* Calls related */
+
+internal fun CallActivity.navigateToActiveCall() {
+    if (findNavController(R.id.nav_host_fragment).currentDestination?.id != R.id.singleCallFragment) {
+        findNavController(R.id.nav_host_fragment).navigate(
+            R.id.action_global_singleCallFragment,
+            null,
+            popupTo(R.id.conferenceCallFragment, true)
+        )
+    }
+}
+
+internal fun CallActivity.navigateToConferenceCall() {
+    if (findNavController(R.id.nav_host_fragment).currentDestination?.id != R.id.conferenceCallFragment) {
+        findNavController(R.id.nav_host_fragment).navigate(
+            R.id.action_global_conferenceCallFragment,
+            null,
+            popupTo(R.id.singleCallFragment, true)
+        )
+    }
+}
+
+internal fun CallActivity.navigateToOutgoingCall() {
+    findNavController(R.id.nav_host_fragment).navigate(
+        R.id.action_global_outgoingCallFragment,
+        null,
+        popupTo(R.id.singleCallFragment, true)
+    )
+}
+
+internal fun CallActivity.navigateToIncomingCall(earlyMediaVideoEnabled: Boolean) {
+    val args = Bundle()
+    args.putBoolean("earlyMediaVideo", earlyMediaVideoEnabled)
+    findNavController(R.id.nav_host_fragment).navigate(
+        R.id.action_global_incomingCallFragment,
+        args,
+        popupTo(R.id.singleCallFragment, true)
+    )
+}
+
+internal fun OutgoingCallFragment.navigateToActiveCall() {
+    findNavController().navigate(
+        R.id.action_global_singleCallFragment,
+        null,
+        popupTo(R.id.outgoingCallFragment, true)
+    )
+}
+
+internal fun IncomingCallFragment.navigateToActiveCall() {
+    findNavController().navigate(
+        R.id.action_global_singleCallFragment,
+        null,
+        popupTo(R.id.incomingCallFragment, true)
+    )
+}
+
+internal fun SingleCallFragment.navigateToCallsList() {
+    if (findNavController().currentDestination?.id == R.id.singleCallFragment) {
+        findNavController().navigate(
+            R.id.action_singleCallFragment_to_callsListFragment,
+            null,
+            popupTo()
+        )
+    }
+}
+
+internal fun SingleCallFragment.navigateToConferenceParticipants() {
+    if (findNavController().currentDestination?.id == R.id.singleCallFragment) {
+        findNavController().navigate(
+            R.id.action_singleCallFragment_to_conferenceParticipantsFragment,
+            null,
+            popupTo()
+        )
+    }
+}
+
+internal fun SingleCallFragment.navigateToConferenceLayout() {
+    if (findNavController().currentDestination?.id == R.id.singleCallFragment) {
+        findNavController().navigate(
+            R.id.action_singleCallFragment_to_conferenceLayoutFragment,
+            null,
+            popupTo()
+        )
+    }
+}
+
+internal fun ConferenceCallFragment.navigateToCallsList() {
+    if (findNavController().currentDestination?.id == R.id.conferenceCallFragment) {
+        findNavController().navigate(
+            R.id.action_conferenceCallFragment_to_callsListFragment,
+            null,
+            popupTo()
+        )
+    }
+}
+
+internal fun ConferenceCallFragment.navigateToConferenceParticipants() {
+    if (findNavController().currentDestination?.id == R.id.conferenceCallFragment) {
+        findNavController().navigate(
+            R.id.action_conferenceCallFragment_to_conferenceParticipantsFragment,
+            null,
+            popupTo()
+        )
+    }
+}
+
+internal fun ConferenceCallFragment.navigateToConferenceLayout() {
+    if (findNavController().currentDestination?.id == R.id.conferenceCallFragment) {
+        findNavController().navigate(
+            R.id.action_conferenceCallFragment_to_conferenceLayoutFragment,
+            null,
+            popupTo()
+        )
+    }
+}
+
+internal fun ConferenceCallFragment.refreshConferenceFragment() {
+    if (findNavController().currentDestination?.id == R.id.conferenceCallFragment) {
+        findNavController().navigate(
+            R.id.action_global_conferenceCallFragment,
+            null,
+            popupTo(R.id.conferenceCallFragment, true)
+        )
+    }
+}
+
+internal fun ConferenceParticipantsFragment.navigateToAddParticipants() {
+    if (findNavController().currentDestination?.id == R.id.conferenceParticipantsFragment) {
+        findNavController().navigate(
+            R.id.action_conferenceParticipantsFragment_to_conferenceAddParticipantsFragment,
+            null,
+            popupTo(R.id.conferenceAddParticipantsFragment, true)
+        )
+    }
 }
 
 /* Assistant related */
@@ -781,10 +1003,10 @@ internal fun WelcomeFragment.navigateToAccountLogin() {
     }
 }
 
-internal fun WelcomeFragment.navigateToGenericLogin() {
+internal fun WelcomeFragment.navigateToGenericLoginWarning() {
     if (findNavController().currentDestination?.id == R.id.welcomeFragment) {
         findNavController().navigate(
-            R.id.action_welcomeFragment_to_genericAccountLoginFragment,
+            R.id.action_welcomeFragment_to_genericAccountWarningFragment,
             null,
             popupTo()
         )
@@ -817,6 +1039,16 @@ internal fun AccountLoginFragment.navigateToPhoneAccountValidation(args: Bundle?
             R.id.action_accountLoginFragment_to_phoneAccountValidationFragment,
             args,
             popupTo()
+        )
+    }
+}
+
+internal fun GenericAccountWarningFragment.navigateToGenericLogin() {
+    if (findNavController().currentDestination?.id == R.id.genericAccountWarningFragment) {
+        findNavController().navigate(
+            R.id.action_genericAccountWarningFragment_to_genericAccountLoginFragment,
+            null,
+            popupTo(R.id.welcomeFragment, popUpInclusive = false)
         )
     }
 }

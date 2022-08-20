@@ -26,6 +26,7 @@ import androidx.security.crypto.MasterKey
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.security.KeyStoreException
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.compatibility.Compatibility
 import org.linphone.core.tools.Log
@@ -46,30 +47,57 @@ class CorePreferences constructor(private val context: Context) {
         private const val encryptedSharedPreferencesFile = "encrypted.pref"
     }
 
-    val encryptedSharedPreferences: SharedPreferences by lazy {
+    val encryptedSharedPreferences: SharedPreferences? by lazy {
         val masterKey: MasterKey = MasterKey.Builder(
             context,
             MasterKey.DEFAULT_MASTER_KEY_ALIAS
         ).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(
-            context, encryptedSharedPreferencesFile, masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        try {
+            EncryptedSharedPreferences.create(
+                context, encryptedSharedPreferencesFile, masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (kse: KeyStoreException) {
+            Log.e("[VFS] Keystore exception: $kse")
+            null
+        } catch (e: Exception) {
+            Log.e("[VFS] Exception: $e")
+            null
+        }
     }
 
     var vfsEnabled: Boolean
-        get() = encryptedSharedPreferences.getBoolean("vfs_enabled", false)
+        get() = encryptedSharedPreferences?.getBoolean("vfs_enabled", false) ?: false
         set(value) {
-            if (!value && encryptedSharedPreferences.getBoolean("vfs_enabled", false)) {
+            val preferences = encryptedSharedPreferences
+            if (preferences == null) {
+                Log.e("[VFS] Failed to get encrypted SharedPreferences")
+                return
+            }
+
+            if (!value && preferences.getBoolean("vfs_enabled", false)) {
                 Log.w("[VFS] It is not possible to disable VFS once it has been enabled")
                 return
             }
-            encryptedSharedPreferences.edit().putBoolean("vfs_enabled", value).apply()
+
+            preferences.edit().putBoolean("vfs_enabled", value)?.apply()
             // When VFS is enabled we disable logcat output for linphone logs
             // TODO: decide if we do it
             // logcatLogsOutput = false
         }
+
+    fun chatRoomMuted(id: String): Boolean {
+        val sharedPreferences: SharedPreferences = coreContext.context.getSharedPreferences("notifications", Context.MODE_PRIVATE)
+        return sharedPreferences.getBoolean(id, false)
+    }
+
+    fun muteChatRoom(id: String, mute: Boolean) {
+        val sharedPreferences: SharedPreferences = coreContext.context.getSharedPreferences("notifications", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putBoolean(id, mute)
+        editor.apply()
+    }
 
     /* App settings */
 
@@ -182,15 +210,15 @@ class CorePreferences constructor(private val context: Context) {
         }
 
     var hideEmptyRooms: Boolean
-        get() = config.getBool("app", "hide_empty_chat_rooms", true)
+        get() = config.getBool("misc", "hide_empty_chat_rooms", true)
         set(value) {
-            config.setBool("app", "hide_empty_chat_rooms", value)
+            config.setBool("misc", "hide_empty_chat_rooms", value)
         }
 
     var hideRoomsFromRemovedProxies: Boolean
-        get() = config.getBool("app", "hide_chat_rooms_from_removed_proxies", true)
+        get() = config.getBool("misc", "hide_chat_rooms_from_removed_proxies", true)
         set(value) {
-            config.setBool("app", "hide_chat_rooms_from_removed_proxies", value)
+            config.setBool("misc", "hide_chat_rooms_from_removed_proxies", value)
         }
 
     var deviceName: String
@@ -245,6 +273,12 @@ class CorePreferences constructor(private val context: Context) {
 
     /* Call */
 
+    var sendEarlyMedia: Boolean
+        get() = config.getBool("sip", "outgoing_calls_early_media", false)
+        set(value) {
+            config.setBool("sip", "outgoing_calls_early_media", value)
+        }
+
     var acceptEarlyMedia: Boolean
         get() = config.getBool("sip", "incoming_calls_early_media", false)
         set(value) {
@@ -294,12 +328,15 @@ class CorePreferences constructor(private val context: Context) {
         get() = config.getBool("app", "use_self_managed_telecom_manager", false)
         set(value) {
             config.setBool("app", "use_self_managed_telecom_manager", value)
+            // We need to disable audio focus requests when enabling telecom manager, otherwise it creates conflicts
+            config.setBool("audio", "android_disable_audio_focus_requests", value)
         }
 
-    var fullScreenCallUI: Boolean
-        get() = config.getBool("app", "full_screen_call", true)
+    // We will try to auto enable Telecom Manager feature, but in case user disables it don't try again
+    var manuallyDisabledTelecomManager: Boolean
+        get() = config.getBool("app", "user_disabled_self_managed_telecom_manager", false)
         set(value) {
-            config.setBool("app", "full_screen_call", value)
+            config.setBool("app", "user_disabled_self_managed_telecom_manager", value)
         }
 
     var routeAudioToBluetoothIfAvailable: Boolean
@@ -320,6 +357,12 @@ class CorePreferences constructor(private val context: Context) {
         get() = config.getBool("audio", "android_pause_calls_when_audio_focus_lost", true)
         set(value) {
             config.setBool("audio", "android_pause_calls_when_audio_focus_lost", value)
+        }
+
+    var enableFullScreenWhenJoiningVideoConference: Boolean
+        get() = config.getBool("app", "enter_video_conference_enable_full_screen_mode", true)
+        set(value) {
+            config.setBool("app", "enter_video_conference_enable_full_screen_mode", value)
         }
 
     /* Assistant */
@@ -374,17 +417,8 @@ class CorePreferences constructor(private val context: Context) {
 
     /* UI related */
 
-    val hideContactsWithoutPresence: Boolean
-        get() = config.getBool("app", "hide_contacts_without_presence", false)
-
     val contactOrganizationVisible: Boolean
         get() = config.getBool("app", "display_contact_organization", true)
-
-    val showBorderOnContactAvatar: Boolean
-        get() = config.getBool("app", "show_border_on_contact_avatar", false)
-
-    val showBorderOnBigContactAvatar: Boolean
-        get() = config.getBool("app", "show_border_on_big_contact_avatar", true)
 
     private val darkModeAllowed: Boolean
         get() = config.getBool("app", "dark_mode_allowed", true)
@@ -403,17 +437,20 @@ class CorePreferences constructor(private val context: Context) {
     val fetchContactsFromDefaultDirectory: Boolean
         get() = config.getBool("app", "fetch_contacts_from_default_directory", true)
 
+    val delayBeforeShowingContactsSearchSpinner: Int
+        get() = config.getInt("app", "delay_before_showing_contacts_search_spinner", 200)
+
+    // From Android Contact APIs we can also retrieve the internationalized phone number
+    // By default we display the same value as the native address book app
+    val preferNormalizedPhoneNumbersFromAddressBook: Boolean
+        get() = config.getBool("app", "prefer_normalized_phone_numbers_from_address_book", false)
+
     val hideStaticImageCamera: Boolean
         get() = config.getBool("app", "hide_static_image_camera", true)
 
     // Will disable chat feature completely
     val disableChat: Boolean
         get() = config.getBool("app", "disable_chat_feature", false)
-
-    // If enabled, this will cause the video to "freeze" on your correspondent screen
-    // as you won't send video packets anymore
-    val hideCameraPreviewInPipMode: Boolean
-        get() = config.getBool("app", "hide_camera_preview_in_pip_mode", false)
 
     // This will prevent UI from showing up, except for the launcher & the foreground service notification
     val preventInterfaceFromShowingUp: Boolean
@@ -425,7 +462,15 @@ class CorePreferences constructor(private val context: Context) {
         get() = config.getBool("app", "record_voice_messages_in_mkv_format", true)
 
     val useEphemeralPerDeviceMode: Boolean
-        get() = config.getBool("app", "ephemeral_chat_messages_settings_per_device", false)
+        get() = config.getBool("app", "ephemeral_chat_messages_settings_per_device", true)
+
+    // If enabled user will see all ringtones bundled in our SDK
+    // and will be able to choose which one to use if not using it's device's default
+    val showAllRingtones: Boolean
+        get() = config.getBool("app", "show_all_available_ringtones", false)
+
+    val showContactInviteBySms: Boolean
+        get() = config.getBool("app", "show_invite_contact_by_sms", true)
 
     /* Default values related */
 
@@ -438,8 +483,15 @@ class CorePreferences constructor(private val context: Context) {
     val defaultRlsUri: String
         get() = config.getString("sip", "rls_uri", "sips:rls@sip.linphone.org")!!
 
+    val defaultLimeServerUrl: String
+        get() = config.getString("lime", "lime_server_url", "https://lime.linphone.org/lime-server/lime-server.php")!!
+
     val debugPopupCode: String
         get() = config.getString("app", "debug_popup_magic", "#1234#")!!
+
+    // If there is more participants than this value in a conference, force ActiveSpeaker layout
+    val maxConferenceParticipantsForMosaicLayout: Int
+        get() = config.getInt("app", "conference_mosaic_layout_max_participants", 6)
 
     val conferenceServerUri: String
         get() = config.getString(
@@ -448,19 +500,12 @@ class CorePreferences constructor(private val context: Context) {
             "sip:conference-factory@sip.linphone.org"
         )!!
 
-    val limeX3dhServerUrl: String
+    val audioVideoConferenceServerUri: String
         get() = config.getString(
             "app",
-            "default_lime_x3dh_server_url",
-            "https://lime.linphone.org/lime-server/lime-server.php"
+            "default_audio_video_conference_factory_uri",
+            "sip:videoconference-factory2@sip.linphone.org"
         )!!
-
-    val checkIfUpdateAvailableUrl: String?
-        get() = config.getString(
-            "misc",
-            "version_check_url_root",
-            "https://linphone.org/releases/android/RELEASE"
-        )
 
     val checkUpdateAvailableInterval: Int
         get() = config.getInt("app", "version_check_interval", 86400000)
@@ -492,6 +537,9 @@ class CorePreferences constructor(private val context: Context) {
 
     val showRecordingsInSideMenu: Boolean
         get() = config.getBool("app", "side_menu_recordings", true)
+
+    val showScheduledConferencesInSideMenu: Boolean
+        get() = config.getBool("app", "side_menu_conferences", true)
 
     val showAboutInSideMenu: Boolean
         get() = config.getBool("app", "side_menu_about", true)
@@ -531,6 +579,9 @@ class CorePreferences constructor(private val context: Context) {
     val showAdvancedSettings: Boolean
         get() = config.getBool("app", "settings_advanced", true)
 
+    val showConferencesSettings: Boolean
+        get() = config.getBool("app", "settings_conferences", true)
+
     /* Assets stuff */
 
     val configPath: String
@@ -545,8 +596,11 @@ class CorePreferences constructor(private val context: Context) {
     val defaultValuesPath: String
         get() = context.filesDir.absolutePath + "/assistant_default_values"
 
-    val ringtonePath: String
-        get() = context.filesDir.absolutePath + "/share/sounds/linphone/rings/notes_of_the_optimistic.mkv"
+    val ringtonesPath: String
+        get() = context.filesDir.absolutePath + "/share/sounds/linphone/rings/"
+
+    val defaultRingtonePath: String
+        get() = ringtonesPath + "notes_of_the_optimistic.mkv"
 
     val userCertificatesPath: String
         get() = context.filesDir.absolutePath + "/user-certs"

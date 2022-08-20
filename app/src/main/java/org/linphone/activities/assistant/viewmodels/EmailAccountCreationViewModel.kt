@@ -34,7 +34,7 @@ class EmailAccountCreationViewModelFactory(private val accountCreator: AccountCr
     ViewModelProvider.NewInstanceFactory() {
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return EmailAccountCreationViewModel(accountCreator) as T
     }
 }
@@ -51,6 +51,8 @@ class EmailAccountCreationViewModel(val accountCreator: AccountCreator) : ViewMo
 
     val passwordConfirmation = MutableLiveData<String>()
     val passwordConfirmationError = MutableLiveData<String>()
+
+    val displayName = MutableLiveData<String>()
 
     val createEnabled: MediatorLiveData<Boolean> = MediatorLiveData()
 
@@ -146,6 +148,7 @@ class EmailAccountCreationViewModel(val accountCreator: AccountCreator) : ViewMo
         accountCreator.username = username.value
         accountCreator.password = password.value
         accountCreator.email = email.value
+        accountCreator.displayName = displayName.value
 
         waitForServerAnswer.value = true
         val status = accountCreator.isAccountExist

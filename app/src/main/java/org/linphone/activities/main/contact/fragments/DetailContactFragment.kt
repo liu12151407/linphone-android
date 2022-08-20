@@ -26,7 +26,6 @@ import android.os.Bundle
 import android.view.View
 import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.ViewModelProvider
-import androidx.navigation.fragment.findNavController
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
 import org.linphone.activities.*
@@ -34,7 +33,6 @@ import org.linphone.activities.main.*
 import org.linphone.activities.main.contact.viewmodels.ContactViewModel
 import org.linphone.activities.main.contact.viewmodels.ContactViewModelFactory
 import org.linphone.activities.main.viewmodels.DialogViewModel
-import org.linphone.activities.main.viewmodels.SharedMainViewModel
 import org.linphone.activities.navigateToChatRoom
 import org.linphone.activities.navigateToContactEditor
 import org.linphone.activities.navigateToDialer
@@ -45,7 +43,6 @@ import org.linphone.utils.Event
 
 class DetailContactFragment : GenericFragment<ContactDetailFragmentBinding>() {
     private lateinit var viewModel: ContactViewModel
-    private lateinit var sharedViewModel: SharedMainViewModel
 
     override fun getLayoutId(): Int = R.layout.contact_detail_fragment
 
@@ -54,9 +51,6 @@ class DetailContactFragment : GenericFragment<ContactDetailFragmentBinding>() {
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedMainViewModel::class.java)
-        }
         binding.sharedMainViewModel = sharedViewModel
 
         useMaterialSharedAxisXForwardAnimation = sharedViewModel.isSlidingPaneSlideable.value == false
@@ -70,8 +64,7 @@ class DetailContactFragment : GenericFragment<ContactDetailFragmentBinding>() {
 
         val contact = sharedViewModel.selectedContact.value
         if (contact == null) {
-            Log.e("[Contact] Contact is null, aborting!")
-            // (activity as MainActivity).showSnackBar(R.string.error)
+            Log.e("[Contact] Friend is null, aborting!")
             goBack()
             return
         }
@@ -83,50 +76,49 @@ class DetailContactFragment : GenericFragment<ContactDetailFragmentBinding>() {
         binding.viewModel = viewModel
 
         viewModel.sendSmsToEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { number ->
-                    sendSms(number)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { number ->
+                sendSms(number)
             }
-        )
+        }
 
         viewModel.startCallToEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { address ->
-                    if (coreContext.core.callsNb > 0) {
-                        Log.i("[Contact] Starting dialer with pre-filled URI ${address.asStringUriOnly()}, is transfer? ${sharedViewModel.pendingCallTransfer}")
-                        sharedViewModel.updateContactsAnimationsBasedOnDestination.value = Event(R.id.dialerFragment)
-                        sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(R.id.masterContactsFragment)
+            viewLifecycleOwner
+        ) {
+            it.consume { address ->
+                if (coreContext.core.callsNb > 0) {
+                    Log.i("[Contact] Starting dialer with pre-filled URI ${address.asStringUriOnly()}, is transfer? ${sharedViewModel.pendingCallTransfer}")
+                    sharedViewModel.updateContactsAnimationsBasedOnDestination.value =
+                        Event(R.id.dialerFragment)
+                    sharedViewModel.updateDialerAnimationsBasedOnDestination.value =
+                        Event(R.id.masterContactsFragment)
 
-                        val args = Bundle()
-                        args.putString("URI", address.asStringUriOnly())
-                        args.putBoolean("Transfer", sharedViewModel.pendingCallTransfer)
-                        args.putBoolean("SkipAutoCallStart", true) // If auto start call setting is enabled, ignore it
-                        navigateToDialer(args)
-                    } else {
-                        coreContext.startCall(address)
-                    }
+                    val args = Bundle()
+                    args.putString("URI", address.asStringUriOnly())
+                    args.putBoolean("Transfer", sharedViewModel.pendingCallTransfer)
+                    args.putBoolean(
+                        "SkipAutoCallStart",
+                        true
+                    ) // If auto start call setting is enabled, ignore it
+                    navigateToDialer(args)
+                } else {
+                    coreContext.startCall(address)
                 }
             }
-        )
+        }
 
         viewModel.chatRoomCreatedEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { chatRoom ->
-                    sharedViewModel.updateContactsAnimationsBasedOnDestination.value = Event(R.id.masterChatRoomsFragment)
-                    val args = Bundle()
-                    args.putString("LocalSipUri", chatRoom.localAddress.asStringUriOnly())
-                    args.putString("RemoteSipUri", chatRoom.peerAddress.asStringUriOnly())
-                    navigateToChatRoom(args)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { chatRoom ->
+                sharedViewModel.updateContactsAnimationsBasedOnDestination.value =
+                    Event(R.id.masterChatRoomsFragment)
+                val args = Bundle()
+                args.putString("LocalSipUri", chatRoom.localAddress.asStringUriOnly())
+                args.putString("RemoteSipUri", chatRoom.peerAddress.asStringUriOnly())
+                navigateToChatRoom(args)
             }
-        )
-
-        binding.setBackClickListener {
-            goBack()
         }
 
         binding.setEditClickListener {
@@ -137,14 +129,14 @@ class DetailContactFragment : GenericFragment<ContactDetailFragmentBinding>() {
             confirmContactRemoval()
         }
 
-        viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { messageResourceId ->
-                    (activity as MainActivity).showSnackBar(messageResourceId)
-                }
+        viewModel.onMessageToNotifyEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { messageResourceId ->
+                (activity as MainActivity).showSnackBar(messageResourceId)
             }
-        )
+        }
+        viewModel.updateNumbersAndAddresses()
 
         view.doOnPreDraw {
             // Notifies fragment is ready to be drawn
@@ -152,13 +144,19 @@ class DetailContactFragment : GenericFragment<ContactDetailFragmentBinding>() {
         }
     }
 
-    override fun goBack() {
-        if (!findNavController().popBackStack()) {
-            if (sharedViewModel.isSlidingPaneSlideable.value == true) {
-                sharedViewModel.closeSlidingPaneEvent.value = Event(true)
-            } else {
-                navigateToEmptyContact()
-            }
+    override fun onResume() {
+        super.onResume()
+        if (this::viewModel.isInitialized) {
+            viewModel.registerContactListener()
+            coreContext.contactsManager.contactIdToWatchFor = viewModel.contact.value?.refKey ?: ""
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        coreContext.contactsManager.contactIdToWatchFor = ""
+        if (this::viewModel.isInitialized) {
+            viewModel.unregisterContactListener()
         }
     }
 

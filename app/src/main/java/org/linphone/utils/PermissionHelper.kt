@@ -23,6 +23,7 @@ import android.Manifest
 import android.content.Context
 import org.linphone.compatibility.Compatibility
 import org.linphone.core.tools.Log
+import org.linphone.mediastream.Version
 
 /**
  * Helper methods to check whether a permission has been granted and log the result
@@ -50,15 +51,20 @@ class PermissionHelper private constructor(private val context: Context) {
         return hasPermission(Manifest.permission.WRITE_CONTACTS)
     }
 
-    fun hasReadPhoneState(): Boolean {
+    fun hasReadPhoneStatePermission(): Boolean {
         return hasPermission(Manifest.permission.READ_PHONE_STATE)
     }
 
-    fun hasReadExternalStorage(): Boolean {
-        return hasPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+    fun hasReadPhoneStateOrPhoneNumbersPermission(): Boolean {
+        return Compatibility.hasReadPhoneStateOrNumbersPermission(context)
     }
 
-    fun hasWriteExternalStorage(): Boolean {
+    fun hasReadExternalStoragePermission(): Boolean {
+        return Compatibility.hasReadExternalStoragePermission(context)
+    }
+
+    fun hasWriteExternalStoragePermission(): Boolean {
+        if (Version.sdkAboveOrEqual(Version.API29_ANDROID_10)) return true
         return hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
@@ -70,8 +76,11 @@ class PermissionHelper private constructor(private val context: Context) {
         return hasPermission(Manifest.permission.RECORD_AUDIO)
     }
 
-    fun hasTelecomManagerPermissions(): Boolean {
-        return hasPermission(Manifest.permission.READ_PHONE_STATE) &&
-            hasPermission(Manifest.permission.MANAGE_OWN_CALLS)
+    fun hasBluetoothConnectPermission(): Boolean {
+        return Compatibility.hasBluetoothConnectPermission(context)
+    }
+
+    fun hasPostNotificationsPermission(): Boolean {
+        return Compatibility.hasPostNotificationsPermission(context)
     }
 }

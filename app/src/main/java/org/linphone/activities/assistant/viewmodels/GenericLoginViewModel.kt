@@ -24,7 +24,6 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import org.linphone.LinphoneApplication.Companion.coreContext
-import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.core.*
 import org.linphone.core.tools.Log
 import org.linphone.utils.Event
@@ -33,7 +32,7 @@ class GenericLoginViewModelFactory(private val accountCreator: AccountCreator) :
     ViewModelProvider.NewInstanceFactory() {
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return GenericLoginViewModel(accountCreator) as T
     }
 }
@@ -136,17 +135,11 @@ class GenericLoginViewModel(private val accountCreator: AccountCreator) : ViewMo
             Log.e("[Assistant] [Generic Login] Account creator couldn't create proxy config")
             coreContext.core.removeListener(coreListener)
             onErrorEvent.value = Event("Error: Failed to create account object")
+            waitForServerAnswer.value = false
             return
         }
 
         Log.i("[Assistant] [Generic Login] Proxy config created")
-        // The following is required to keep the app alive
-        // and be able to receive calls while in background
-        if (domain.value.orEmpty() != corePreferences.defaultDomain) {
-            Log.i("[Assistant] [Generic Login] Background mode with foreground service automatically enabled")
-            corePreferences.keepServiceAlive = true
-            coreContext.notificationsManager.startForeground()
-        }
     }
 
     private fun isLoginButtonEnabled(): Boolean {

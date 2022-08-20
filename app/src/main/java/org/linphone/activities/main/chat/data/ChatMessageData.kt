@@ -24,12 +24,14 @@ import android.text.Spannable
 import android.text.util.Linkify
 import androidx.core.text.util.LinkifyCompat
 import androidx.lifecycle.MutableLiveData
+import java.util.regex.Pattern
 import org.linphone.R
 import org.linphone.contact.GenericContactData
 import org.linphone.core.ChatMessage
 import org.linphone.core.ChatMessageListenerStub
 import org.linphone.core.tools.Log
 import org.linphone.utils.AppUtils
+import org.linphone.utils.PatternClickableSpan
 import org.linphone.utils.TimestampUtils
 
 class ChatMessageData(val chatMessage: ChatMessage) : GenericContactData(chatMessage.fromAddress) {
@@ -58,6 +60,13 @@ class ChatMessageData(val chatMessage: ChatMessage) : GenericContactData(chatMes
     val text = MutableLiveData<Spannable>()
 
     val replyData = MutableLiveData<ChatMessageData>()
+
+    val isDisplayed = MutableLiveData<Boolean>()
+
+    val isOutgoing = chatMessage.isOutgoing
+
+    var hasPreviousMessage = false
+    var hasNextMessage = false
 
     private var countDownTimer: CountDownTimer? = null
 
@@ -106,6 +115,11 @@ class ChatMessageData(val chatMessage: ChatMessage) : GenericContactData(chatMes
     }
 
     fun updateBubbleBackground(hasPrevious: Boolean, hasNext: Boolean) {
+        hasPreviousMessage = hasPrevious
+        hasNextMessage = hasNext
+        hideTime.value = false
+        hideAvatar.value = false
+
         if (hasPrevious) {
             hideTime.value = true
         }
@@ -158,6 +172,8 @@ class ChatMessageData(val chatMessage: ChatMessage) : GenericContactData(chatMes
             ChatMessage.State.Displayed -> R.drawable.chat_read
             else -> R.drawable.chat_error
         }
+
+        isDisplayed.value = state == ChatMessage.State.Displayed
     }
 
     private fun updateContentsList() {
@@ -165,16 +181,27 @@ class ChatMessageData(val chatMessage: ChatMessage) : GenericContactData(chatMes
         val list = arrayListOf<ChatMessageContentData>()
 
         val contentsList = chatMessage.contents
-        for (index in 0 until contentsList.size) {
+        for (index in contentsList.indices) {
             val content = contentsList[index]
-            if (content.isFileTransfer || content.isFile) {
+            if (content.isFileTransfer || content.isFile || content.isIcalendar) {
                 val data = ChatMessageContentData(chatMessage, index)
                 data.listener = contentListener
                 list.add(data)
             } else if (content.isText) {
-                val spannable = Spannable.Factory.getInstance().newSpannable(content.utf8Text)
-                LinkifyCompat.addLinks(spannable, Linkify.WEB_URLS)
-                text.value = spannable
+                val spannable = Spannable.Factory.getInstance().newSpannable(content.utf8Text?.trim())
+                LinkifyCompat.addLinks(spannable, Linkify.WEB_URLS or Linkify.PHONE_NUMBERS)
+                text.value = PatternClickableSpan()
+                    .add(
+                        Pattern.compile("(?:<?sips?:)?[^@\\s]+(?:@([^\\s]+))+"),
+                        object : PatternClickableSpan.SpannableClickedListener {
+                            override fun onSpanClicked(text: String) {
+                                Log.i("[Chat Message Data] Clicked on SIP URI: $text")
+                                contentListener?.onSipAddressClicked(text)
+                            }
+                        }
+                    ).build(spannable)
+            } else {
+                Log.e("[Chat Message Data] Unexpected content with type: ${content.type}/${content.subtype}")
             }
         }
 

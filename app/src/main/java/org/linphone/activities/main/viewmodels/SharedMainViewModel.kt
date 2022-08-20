@@ -23,7 +23,6 @@ import android.net.Uri
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import org.linphone.activities.main.history.data.GroupedCallLogData
-import org.linphone.contact.Contact
 import org.linphone.core.*
 import org.linphone.utils.Event
 
@@ -32,7 +31,6 @@ class SharedMainViewModel : ViewModel() {
 
     val layoutChangedEvent = MutableLiveData<Event<Boolean>>()
     var isSlidingPaneSlideable = MutableLiveData<Boolean>()
-    val closeSlidingPaneEvent = MutableLiveData<Event<Boolean>>()
 
     /* Call history */
 
@@ -70,13 +68,17 @@ class SharedMainViewModel : ViewModel() {
     // When using keyboard to share gif or other, see RichContentReceiver & RichEditText classes
     val richContentUri = MutableLiveData<Event<Uri>>()
 
+    val refreshChatRoomInListEvent: MutableLiveData<Event<Boolean>> by lazy {
+        MutableLiveData<Event<Boolean>>()
+    }
+
     /* Contacts */
 
     val contactFragmentOpenedEvent: MutableLiveData<Event<Boolean>> by lazy {
         MutableLiveData<Event<Boolean>>()
     }
 
-    val selectedContact = MutableLiveData<Contact>()
+    val selectedContact = MutableLiveData<Friend>()
 
     // For correct animations directions
     val updateContactsAnimationsBasedOnDestination: MutableLiveData<Event<Int>> by lazy {
@@ -85,11 +87,23 @@ class SharedMainViewModel : ViewModel() {
 
     /* Accounts */
 
+    val defaultAccountChanged = MutableLiveData<Boolean>()
+
     val accountRemoved = MutableLiveData<Boolean>()
+
+    val accountSettingsFragmentOpenedEvent: MutableLiveData<Event<Boolean>> by lazy {
+        MutableLiveData<Event<Boolean>>()
+    }
 
     /* Call */
 
     var pendingCallTransfer: Boolean = false
+
+    /* Conference */
+
+    val conferenceInfoToEdit: MutableLiveData<Event<String>> by lazy {
+        MutableLiveData<Event<String>>()
+    }
 
     /* Dialer */
 

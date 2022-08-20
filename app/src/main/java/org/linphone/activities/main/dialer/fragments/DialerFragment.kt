@@ -19,15 +19,19 @@
  */
 package org.linphone.activities.main.dialer.fragments
 
+import android.Manifest
+import android.annotation.TargetApi
 import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.transition.MaterialSharedAxis
@@ -39,18 +43,21 @@ import org.linphone.activities.main.MainActivity
 import org.linphone.activities.main.dialer.viewmodels.DialerViewModel
 import org.linphone.activities.main.fragments.SecureFragment
 import org.linphone.activities.main.viewmodels.DialogViewModel
-import org.linphone.activities.main.viewmodels.SharedMainViewModel
+import org.linphone.activities.navigateToConferenceScheduling
 import org.linphone.activities.navigateToConfigFileViewer
 import org.linphone.activities.navigateToContacts
+import org.linphone.compatibility.Compatibility
 import org.linphone.core.tools.Log
 import org.linphone.databinding.DialerFragmentBinding
+import org.linphone.mediastream.Version
+import org.linphone.telecom.TelecomHelper
 import org.linphone.utils.AppUtils
 import org.linphone.utils.DialogUtils
 import org.linphone.utils.Event
+import org.linphone.utils.PermissionHelper
 
 class DialerFragment : SecureFragment<DialerFragmentBinding>() {
     private lateinit var viewModel: DialerViewModel
-    private lateinit var sharedViewModel: SharedMainViewModel
 
     private var uploadLogsInitiatedByUs = false
 
@@ -61,33 +68,30 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        viewModel = ViewModelProvider(this).get(DialerViewModel::class.java)
+        viewModel = ViewModelProvider(this)[DialerViewModel::class.java]
         binding.viewModel = viewModel
-
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedMainViewModel::class.java)
-        }
 
         useMaterialSharedAxisXForwardAnimation = false
         sharedViewModel.updateDialerAnimationsBasedOnDestination.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { id ->
-                    val forward = when (id) {
-                        R.id.masterChatRoomsFragment -> false
-                        else -> true
-                    }
-                    if (corePreferences.enableAnimations) {
-                        val portraitOrientation = resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
-                        val axis = if (portraitOrientation) MaterialSharedAxis.X else MaterialSharedAxis.Y
-                        enterTransition = MaterialSharedAxis(axis, forward)
-                        reenterTransition = MaterialSharedAxis(axis, forward)
-                        returnTransition = MaterialSharedAxis(axis, !forward)
-                        exitTransition = MaterialSharedAxis(axis, !forward)
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume { id ->
+                val forward = when (id) {
+                    R.id.masterChatRoomsFragment -> false
+                    else -> true
+                }
+                if (corePreferences.enableAnimations) {
+                    val portraitOrientation =
+                        resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+                    val axis =
+                        if (portraitOrientation) MaterialSharedAxis.X else MaterialSharedAxis.Y
+                    enterTransition = MaterialSharedAxis(axis, forward)
+                    reenterTransition = MaterialSharedAxis(axis, forward)
+                    returnTransition = MaterialSharedAxis(axis, !forward)
+                    exitTransition = MaterialSharedAxis(axis, !forward)
                 }
             }
-        )
+        }
 
         binding.setNewContactClickListener {
             sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(R.id.masterContactsFragment)
@@ -95,11 +99,67 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
             navigateToContacts(viewModel.enteredUri.value)
         }
 
+        binding.setNewConferenceClickListener {
+            sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(R.id.conferenceSchedulingFragment)
+            navigateToConferenceScheduling()
+        }
+
         binding.setTransferCallClickListener {
-            viewModel.transferCall()
-            // Transfer has been consumed
-            sharedViewModel.pendingCallTransfer = false
-            viewModel.transferVisibility.value = false
+            if (viewModel.transferCall()) {
+                // Transfer has been consumed, otherwise it might have been a "bis" use
+                sharedViewModel.pendingCallTransfer = false
+                viewModel.transferVisibility.value = false
+                coreContext.onCallStarted()
+            }
+        }
+
+        viewModel.enteredUri.observe(
+            viewLifecycleOwner
+        ) {
+            if (it == corePreferences.debugPopupCode) {
+                displayDebugPopup()
+                viewModel.enteredUri.value = ""
+            }
+        }
+
+        viewModel.uploadFinishedEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { url ->
+                // To prevent being trigger when using the Send Logs button in About page
+                if (uploadLogsInitiatedByUs) {
+                    val clipboard =
+                        requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("Logs url", url)
+                    clipboard.setPrimaryClip(clip)
+
+                    val activity = requireActivity() as MainActivity
+                    activity.showSnackBar(R.string.logs_url_copied_to_clipboard)
+
+                    AppUtils.shareUploadedLogsUrl(activity, url)
+                }
+            }
+        }
+
+        viewModel.updateAvailableEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { url ->
+                displayNewVersionAvailableDialog(url)
+            }
+        }
+
+        viewModel.onMessageToNotifyEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume { id ->
+                Toast.makeText(requireContext(), id, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        if (corePreferences.firstStart) {
+            Log.w("[Dialer] First start detected, wait for assistant to be finished to check for update & request permissions")
+            return
         }
 
         if (arguments?.containsKey("Transfer") == true) {
@@ -121,49 +181,12 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
         }
         arguments?.clear()
 
-        viewModel.enteredUri.observe(
-            viewLifecycleOwner,
-            {
-                if (it == corePreferences.debugPopupCode) {
-                    displayDebugPopup()
-                    viewModel.enteredUri.value = ""
-                }
-            }
-        )
-
-        viewModel.uploadFinishedEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { url ->
-                    // To prevent being trigger when using the Send Logs button in About page
-                    if (uploadLogsInitiatedByUs) {
-                        val clipboard =
-                            requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("Logs url", url)
-                        clipboard.setPrimaryClip(clip)
-
-                        val activity = requireActivity() as MainActivity
-                        activity.showSnackBar(R.string.logs_url_copied_to_clipboard)
-
-                        AppUtils.shareUploadedLogsUrl(activity, url)
-                    }
-                }
-            }
-        )
-
-        viewModel.updateAvailableEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { url ->
-                    displayNewVersionAvailableDialog(url)
-                }
-            }
-        )
-
         Log.i("[Dialer] Pending call transfer mode = ${sharedViewModel.pendingCallTransfer}")
         viewModel.transferVisibility.value = sharedViewModel.pendingCallTransfer
 
         checkForUpdate()
+
+        checkPermissions()
     }
 
     override fun onPause() {
@@ -183,6 +206,89 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
         uploadLogsInitiatedByUs = false
 
         viewModel.enteredUri.value = sharedViewModel.dialerUri
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (requestCode == 0) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.i("[Dialer] READ_PHONE_STATE permission has been granted")
+                coreContext.initPhoneStateListener()
+            }
+            checkPermissions()
+        } else if (requestCode == 1) {
+            var allGranted = true
+            for (result in grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false
+                }
+            }
+            if (allGranted) {
+                Log.i("[Dialer] Telecom Manager permission have been granted")
+                enableTelecomManager()
+            } else {
+                Log.w("[Dialer] Telecom Manager permission have been denied (at least one of them)")
+            }
+        } else if (requestCode == 2) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.i("[Dialer] POST_NOTIFICATIONS permission has been granted")
+            }
+            checkTelecomManagerPermissions()
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    private fun checkPermissions() {
+        if (!PermissionHelper.get().hasReadPhoneStatePermission()) {
+            Log.i("[Dialer] Asking for READ_PHONE_STATE permission")
+            requestPermissions(arrayOf(Manifest.permission.READ_PHONE_STATE), 0)
+        } else if (!PermissionHelper.get().hasPostNotificationsPermission()) {
+            // Don't check the following the previous permission is being asked
+            Log.i("[Dialer] Asking for POST_NOTIFICATIONS permission")
+            Compatibility.requestPostNotificationsPermission(this, 2)
+        } else if (Version.sdkAboveOrEqual(Version.API26_O_80)) {
+            // Don't check the following the previous permissions are being asked
+            checkTelecomManagerPermissions()
+        }
+    }
+
+    @TargetApi(Version.API26_O_80)
+    private fun checkTelecomManagerPermissions() {
+        if (!corePreferences.useTelecomManager) {
+            Log.i("[Dialer] Telecom Manager feature is disabled")
+            if (corePreferences.manuallyDisabledTelecomManager) {
+                Log.w("[Dialer] User has manually disabled Telecom Manager feature")
+            } else {
+                if (Compatibility.hasTelecomManagerPermissions(requireContext())) {
+                    enableTelecomManager()
+                } else {
+                    Log.i("[Dialer] Asking for Telecom Manager permissions")
+                    Compatibility.requestTelecomManagerPermissions(requireActivity(), 1)
+                }
+            }
+        } else {
+            Log.i("[Dialer] Telecom Manager feature is already enabled")
+        }
+    }
+
+    @TargetApi(Version.API26_O_80)
+    private fun enableTelecomManager() {
+        Log.i("[Dialer] Telecom Manager permissions granted")
+        if (!TelecomHelper.exists()) {
+            Log.i("[Dialer] Creating Telecom Helper")
+            if (requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_CONNECTION_SERVICE)) {
+                TelecomHelper.create(requireContext())
+            } else {
+                Log.e("[Dialer] Telecom Helper can't be created, device doesn't support connection service!")
+                return
+            }
+        } else {
+            Log.e("[Dialer] Telecom Manager was already created ?!")
+        }
+        corePreferences.useTelecomManager = true
     }
 
     private fun displayDebugPopup() {
@@ -217,17 +323,14 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
     }
 
     private fun checkForUpdate() {
-        val url: String? = corePreferences.checkIfUpdateAvailableUrl
-        if (url != null && url.isNotEmpty()) {
-            val lastTimestamp: Int = corePreferences.lastUpdateAvailableCheckTimestamp
-            val currentTimeStamp = System.currentTimeMillis().toInt()
-            val interval: Int = corePreferences.checkUpdateAvailableInterval
-            if (lastTimestamp == 0 || currentTimeStamp - lastTimestamp >= interval) {
-                val currentVersion = BuildConfig.VERSION_NAME
-                Log.i("[Dialer] Checking for update using url [$url] and current version [$currentVersion]")
-                coreContext.core.checkForUpdate(currentVersion)
-                corePreferences.lastUpdateAvailableCheckTimestamp = currentTimeStamp
-            }
+        val lastTimestamp: Int = corePreferences.lastUpdateAvailableCheckTimestamp
+        val currentTimeStamp = System.currentTimeMillis().toInt()
+        val interval: Int = corePreferences.checkUpdateAvailableInterval
+        if (lastTimestamp == 0 || currentTimeStamp - lastTimestamp >= interval) {
+            val currentVersion = BuildConfig.VERSION_NAME
+            Log.i("[Dialer] Checking for update using current version [$currentVersion]")
+            coreContext.core.checkForUpdate(currentVersion)
+            corePreferences.lastUpdateAvailableCheckTimestamp = currentTimeStamp
         }
     }
 
@@ -241,9 +344,14 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
 
         viewModel.showOkButton(
             {
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                startActivity(browserIntent)
-                dialog.dismiss()
+                try {
+                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    startActivity(browserIntent)
+                } catch (ise: IllegalStateException) {
+                    Log.e("[Dialer] Can't start ACTION_VIEW intent, IllegalStateException: $ise")
+                } finally {
+                    dialog.dismiss()
+                }
             },
             getString(R.string.dialog_ok)
         )

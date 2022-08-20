@@ -32,11 +32,10 @@ import java.io.File
 import kotlinx.coroutines.launch
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
-import org.linphone.activities.GenericFragment
+import org.linphone.activities.*
 import org.linphone.activities.assistant.AssistantActivity
 import org.linphone.activities.main.settings.SettingListenerStub
 import org.linphone.activities.main.sidemenu.viewmodels.SideMenuViewModel
-import org.linphone.activities.main.viewmodels.SharedMainViewModel
 import org.linphone.activities.navigateToAbout
 import org.linphone.activities.navigateToAccountSettings
 import org.linphone.activities.navigateToRecordings
@@ -49,7 +48,6 @@ import org.linphone.utils.PermissionHelper
 
 class SideMenuFragment : GenericFragment<SideMenuFragmentBinding>() {
     private lateinit var viewModel: SideMenuViewModel
-    private lateinit var sharedViewModel: SharedMainViewModel
     private var temporaryPicturePath: File? = null
 
     override fun getLayoutId(): Int = R.layout.side_menu_fragment
@@ -59,20 +57,22 @@ class SideMenuFragment : GenericFragment<SideMenuFragmentBinding>() {
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        viewModel = ViewModelProvider(this).get(SideMenuViewModel::class.java)
+        viewModel = ViewModelProvider(this)[SideMenuViewModel::class.java]
         binding.viewModel = viewModel
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedMainViewModel::class.java)
+        sharedViewModel.accountRemoved.observe(
+            viewLifecycleOwner
+        ) {
+            Log.i("[Side Menu] Account removed, update accounts list")
+            viewModel.updateAccountsList()
         }
 
-        sharedViewModel.accountRemoved.observe(
-            viewLifecycleOwner,
-            {
-                Log.i("[Side Menu] Account removed, update accounts list")
-                viewModel.updateAccountsList()
-            }
-        )
+        sharedViewModel.defaultAccountChanged.observe(
+            viewLifecycleOwner
+        ) {
+            Log.i("[Side Menu] Default account changed, update accounts list")
+            viewModel.updateAccountsList()
+        }
 
         viewModel.accountsSettingsListener = object : SettingListenerStub() {
             override fun onAccountClicked(identity: String) {
@@ -109,8 +109,17 @@ class SideMenuFragment : GenericFragment<SideMenuFragmentBinding>() {
             navigateToAbout()
         }
 
+        binding.setConferencesClickListener {
+            sharedViewModel.toggleDrawerEvent.value = Event(true)
+            navigateToScheduledConferences()
+        }
+
         binding.setQuitClickListener {
+            Log.i("[Side Menu] Quitting app")
             requireActivity().finishAndRemoveTask()
+
+            Log.i("[Side Menu] Stopping Core Context")
+            coreContext.notificationsManager.stopForegroundNotification()
             coreContext.stop()
         }
     }

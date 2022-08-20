@@ -26,12 +26,11 @@ import android.provider.Settings
 import android.view.View
 import androidx.lifecycle.ViewModelProvider
 import org.linphone.R
+import org.linphone.activities.main.chat.viewmodels.ChatRoomsListViewModel
 import org.linphone.activities.main.settings.viewmodels.ChatSettingsViewModel
-import org.linphone.activities.navigateToEmptySetting
-import org.linphone.compatibility.Compatibility
 import org.linphone.databinding.SettingsChatFragmentBinding
 import org.linphone.mediastream.Version
-import org.linphone.utils.Event
+import org.linphone.utils.ShortcutsHelper
 
 class ChatSettingsFragment : GenericSettingFragment<SettingsChatFragmentBinding>() {
     private lateinit var viewModel: ChatSettingsViewModel
@@ -44,52 +43,53 @@ class ChatSettingsFragment : GenericSettingFragment<SettingsChatFragmentBinding>
         binding.lifecycleOwner = viewLifecycleOwner
         binding.sharedMainViewModel = sharedViewModel
 
-        viewModel = ViewModelProvider(this).get(ChatSettingsViewModel::class.java)
+        viewModel = ViewModelProvider(this)[ChatSettingsViewModel::class.java]
         binding.viewModel = viewModel
 
-        binding.setBackClickListener { goBack() }
-
         viewModel.launcherShortcutsEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { newValue ->
-                    if (newValue) {
-                        Compatibility.createShortcutsToChatRooms(requireContext())
-                    } else {
-                        Compatibility.removeShortcuts(requireContext())
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume { newValue ->
+                if (newValue) {
+                    ShortcutsHelper.createShortcutsToChatRooms(requireContext())
+                } else {
+                    ShortcutsHelper.removeShortcuts(requireContext())
                 }
             }
-        )
+        }
 
         viewModel.goToAndroidNotificationSettingsEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    if (Build.VERSION.SDK_INT >= Version.API26_O_80) {
-                        val i = Intent()
-                        i.action = Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS
-                        i.putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
-                        i.putExtra(
-                            Settings.EXTRA_CHANNEL_ID,
-                            getString(R.string.notification_channel_chat_id)
-                        )
-                        i.addCategory(Intent.CATEGORY_DEFAULT)
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        i.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
-                        i.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
-                        startActivity(i)
-                    }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                if (Build.VERSION.SDK_INT >= Version.API26_O_80) {
+                    val i = Intent()
+                    i.action = Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS
+                    i.putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
+                    i.putExtra(
+                        Settings.EXTRA_CHANNEL_ID,
+                        getString(R.string.notification_channel_chat_id)
+                    )
+                    i.addCategory(Intent.CATEGORY_DEFAULT)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    i.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+                    i.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                    startActivity(i)
                 }
             }
-        )
+        }
+
+        viewModel.reloadChatRoomsEvent.observe(viewLifecycleOwner) {
+            it.consume {
+                reloadChatRooms()
+            }
+        }
     }
 
-    override fun goBack() {
-        if (sharedViewModel.isSlidingPaneSlideable.value == true) {
-            sharedViewModel.closeSlidingPaneEvent.value = Event(true)
-        } else {
-            navigateToEmptySetting()
+    private fun reloadChatRooms() {
+        val listViewModel = requireActivity().run {
+            ViewModelProvider(this)[ChatRoomsListViewModel::class.java]
         }
+        listViewModel.updateChatRooms()
     }
 }

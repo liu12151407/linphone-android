@@ -23,10 +23,10 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import java.util.*
+import kotlin.math.max
 import org.linphone.activities.main.chat.data.EventLogData
 import org.linphone.core.*
 import org.linphone.core.tools.Log
-import org.linphone.mediastream.Version
 import org.linphone.utils.Event
 import org.linphone.utils.LinphoneUtils
 import org.linphone.utils.PermissionHelper
@@ -35,7 +35,7 @@ class ChatMessagesListViewModelFactory(private val chatRoom: ChatRoom) :
     ViewModelProvider.NewInstanceFactory() {
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return ChatMessagesListViewModel(chatRoom) as T
     }
 }
@@ -70,7 +70,7 @@ class ChatMessagesListViewModel(private val chatRoom: ChatRoom) : ViewModel() {
                     return
                 }
 
-                if (Version.sdkStrictlyBelow(Version.API29_ANDROID_10) && !PermissionHelper.get().hasWriteExternalStorage()) {
+                if (!PermissionHelper.get().hasWriteExternalStoragePermission()) {
                     for (content in chatMessage.contents) {
                         if (content.isFileTransfer) {
                             Log.i("[Chat Messages] Android < 10 detected and WRITE_EXTERNAL_STORAGE permission isn't granted yet")
@@ -157,27 +157,21 @@ class ChatMessagesListViewModel(private val chatRoom: ChatRoom) : ViewModel() {
     }
 
     fun deleteMessage(chatMessage: ChatMessage) {
-        val position: Int = chatMessage.userData as Int
         LinphoneUtils.deleteFilesAttachedToChatMessage(chatMessage)
         chatRoom.deleteMessage(chatMessage)
 
-        val list = arrayListOf<EventLogData>()
-        list.addAll(events.value.orEmpty())
-        list.removeAt(position)
-        events.value = list
+        events.value.orEmpty().forEach(EventLogData::destroy)
+        events.value = getEvents()
     }
 
     fun deleteEventLogs(listToDelete: ArrayList<EventLogData>) {
-        val list = arrayListOf<EventLogData>()
-        list.addAll(events.value.orEmpty())
-
         for (eventLog in listToDelete) {
             LinphoneUtils.deleteFilesAttachedToEventLog(eventLog.eventLog)
             eventLog.eventLog.deleteFromDatabase()
-            list.remove(eventLog)
         }
 
-        events.value = list
+        events.value.orEmpty().forEach(EventLogData::destroy)
+        events.value = getEvents()
     }
 
     fun loadMoreData(totalItemsCount: Int) {
@@ -212,10 +206,32 @@ class ChatMessagesListViewModel(private val chatRoom: ChatRoom) : ViewModel() {
 
     private fun getEvents(): ArrayList<EventLogData> {
         val list = arrayListOf<EventLogData>()
-        val history = chatRoom.getHistoryEvents(MESSAGES_PER_PAGE)
+        val unreadCount = chatRoom.unreadMessagesCount
+        var loadCount = max(MESSAGES_PER_PAGE, unreadCount)
+        Log.i("[Chat Messages] $unreadCount unread messages in this chat room, loading $loadCount from history")
+
+        val history = chatRoom.getHistoryEvents(loadCount)
+        var messageCount = 0
         for (eventLog in history) {
             list.add(EventLogData(eventLog))
+            if (eventLog.type == EventLog.Type.ConferenceChatMessage) {
+                messageCount += 1
+            }
         }
+
+        // Load enough events to have at least all unread messages
+        while (unreadCount > 0 && messageCount < unreadCount) {
+            Log.w("[Chat Messages] There is only $messageCount messages in the last $loadCount events, loading $MESSAGES_PER_PAGE more")
+            val moreHistory = chatRoom.getHistoryRangeEvents(loadCount, loadCount + MESSAGES_PER_PAGE)
+            loadCount += MESSAGES_PER_PAGE
+            for (eventLog in moreHistory) {
+                list.add(EventLogData(eventLog))
+                if (eventLog.type == EventLog.Type.ConferenceChatMessage) {
+                    messageCount += 1
+                }
+            }
+        }
+
         return list
     }
 
@@ -225,6 +241,8 @@ class ChatMessagesListViewModel(private val chatRoom: ChatRoom) : ViewModel() {
             LinphoneUtils.deleteFilesAttachedToChatMessage(chatMessage)
             chatRoom.deleteMessage(chatMessage)
         }
+
+        events.value.orEmpty().forEach(EventLogData::destroy)
         events.value = getEvents()
     }
 }

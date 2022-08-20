@@ -24,9 +24,7 @@ import android.view.View
 import androidx.lifecycle.ViewModelProvider
 import org.linphone.R
 import org.linphone.activities.main.settings.viewmodels.NetworkSettingsViewModel
-import org.linphone.activities.navigateToEmptySetting
 import org.linphone.databinding.SettingsNetworkFragmentBinding
-import org.linphone.utils.Event
 
 class NetworkSettingsFragment : GenericSettingFragment<SettingsNetworkFragmentBinding>() {
     private lateinit var viewModel: NetworkSettingsViewModel
@@ -39,17 +37,7 @@ class NetworkSettingsFragment : GenericSettingFragment<SettingsNetworkFragmentBi
         binding.lifecycleOwner = viewLifecycleOwner
         binding.sharedMainViewModel = sharedViewModel
 
-        viewModel = ViewModelProvider(this).get(NetworkSettingsViewModel::class.java)
+        viewModel = ViewModelProvider(this)[NetworkSettingsViewModel::class.java]
         binding.viewModel = viewModel
-
-        binding.setBackClickListener { goBack() }
-    }
-
-    override fun goBack() {
-        if (sharedViewModel.isSlidingPaneSlideable.value == true) {
-            sharedViewModel.closeSlidingPaneEvent.value = Event(true)
-        } else {
-            navigateToEmptySetting()
-        }
     }
 }

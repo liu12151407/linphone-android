@@ -32,7 +32,7 @@ import org.linphone.activities.navigateToEmailAccountValidation
 import org.linphone.databinding.AssistantEmailAccountCreationFragmentBinding
 
 class EmailAccountCreationFragment : GenericFragment<AssistantEmailAccountCreationFragmentBinding>() {
-    private lateinit var sharedViewModel: SharedAssistantViewModel
+    private lateinit var sharedAssistantViewModel: SharedAssistantViewModel
     private lateinit var viewModel: EmailAccountCreationViewModel
 
     override fun getLayoutId(): Int = R.layout.assistant_email_account_creation_fragment
@@ -42,29 +42,27 @@ class EmailAccountCreationFragment : GenericFragment<AssistantEmailAccountCreati
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        sharedViewModel = requireActivity().run {
-            ViewModelProvider(this).get(SharedAssistantViewModel::class.java)
+        sharedAssistantViewModel = requireActivity().run {
+            ViewModelProvider(this)[SharedAssistantViewModel::class.java]
         }
 
-        viewModel = ViewModelProvider(this, EmailAccountCreationViewModelFactory(sharedViewModel.getAccountCreator())).get(EmailAccountCreationViewModel::class.java)
+        viewModel = ViewModelProvider(this, EmailAccountCreationViewModelFactory(sharedAssistantViewModel.getAccountCreator()))[EmailAccountCreationViewModel::class.java]
         binding.viewModel = viewModel
 
         viewModel.goToEmailValidationEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume {
-                    navigateToEmailAccountValidation()
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                navigateToEmailAccountValidation()
             }
-        )
+        }
 
         viewModel.onErrorEvent.observe(
-            viewLifecycleOwner,
-            {
-                it.consume { message ->
-                    (requireActivity() as AssistantActivity).showSnackBar(message)
-                }
+            viewLifecycleOwner
+        ) {
+            it.consume { message ->
+                (requireActivity() as AssistantActivity).showSnackBar(message)
             }
-        )
+        }
     }
 }

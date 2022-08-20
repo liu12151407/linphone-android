@@ -19,36 +19,41 @@
  */
 package org.linphone.utils
 
+import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Patterns
 import android.view.LayoutInflater
+import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import android.widget.SeekBar.OnSeekBarChangeListener
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.Guideline
 import androidx.databinding.*
-import com.bumptech.glide.load.DataSource
-import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.load.engine.GlideException
-import com.bumptech.glide.request.RequestListener
-import com.bumptech.glide.request.RequestOptions
-import com.bumptech.glide.request.target.Target
-import com.bumptech.glide.signature.ObjectKey
+import coil.load
+import coil.request.CachePolicy
+import coil.request.videoFrameMillis
+import coil.transform.CircleCropTransformation
 import com.google.android.material.switchmaterial.SwitchMaterial
+import kotlinx.coroutines.*
 import org.linphone.BR
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.activities.GenericActivity
 import org.linphone.activities.main.settings.SettingListener
-import org.linphone.contact.ContactAvatarView
+import org.linphone.activities.voip.data.ConferenceParticipantDeviceData
+import org.linphone.activities.voip.views.ScrollDotsView
+import org.linphone.contact.ContactAvatarGenerator
+import org.linphone.contact.ContactDataInterface
+import org.linphone.contact.getPictureUri
 import org.linphone.core.tools.Log
 import org.linphone.views.VoiceRecordProgressBar
 
@@ -56,14 +61,17 @@ import org.linphone.views.VoiceRecordProgressBar
  * This file contains all the data binding necessary for the app
  */
 
-@BindingAdapter("android:src")
-fun ImageView.setSourceImageResource(resource: Int) {
-    this.setImageResource(resource)
+fun View.hideKeyboard() {
+    try {
+        val imm =
+            context.getSystemService(Activity.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(windowToken, 0)
+    } catch (e: Exception) {}
 }
 
 @BindingAdapter("android:src")
-fun ImageView.setSourceImageBitmap(bitmap: Bitmap?) {
-    if (bitmap != null) this.setImageBitmap(bitmap)
+fun ImageView.setSourceImageResource(resource: Int) {
+    this.setImageResource(resource)
 }
 
 @BindingAdapter("android:contentDescription")
@@ -80,16 +88,6 @@ fun TextView.setTypeface(typeface: Int) {
     this.setTypeface(null, typeface)
 }
 
-@BindingAdapter("android:layout_height")
-fun View.setLayoutHeight(dimension: Float) {
-    this.layoutParams.height = dimension.toInt()
-}
-
-@BindingAdapter("android:maxHeight")
-fun ImageView.setImageMaxHeight(dimension: Float) {
-    this.maxHeight = dimension.toInt()
-}
-
 @BindingAdapter("android:layout_size")
 fun View.setLayoutSize(dimension: Float) {
     if (dimension == 0f) return
@@ -97,8 +95,8 @@ fun View.setLayoutSize(dimension: Float) {
     this.layoutParams.width = dimension.toInt()
 }
 
-@BindingAdapter("android:background")
-fun LinearLayout.setBackground(resource: Int) {
+@BindingAdapter("backgroundImage")
+fun LinearLayout.setBackgroundImage(resource: Int) {
     this.setBackgroundResource(resource)
 }
 
@@ -119,13 +117,6 @@ fun setLeftMargin(view: View, margin: Float) {
 fun setRightMargin(view: View, margin: Float) {
     val layoutParams = view.layoutParams as RelativeLayout.LayoutParams
     layoutParams.rightMargin = margin.toInt()
-    view.layoutParams = layoutParams
-}
-
-@BindingAdapter("android:layout_weight")
-fun setLayoutWeight(view: View, weight: Float) {
-    val layoutParams = view.layoutParams as LinearLayout.LayoutParams
-    layoutParams.weight = weight
     view.layoutParams = layoutParams
 }
 
@@ -186,6 +177,23 @@ fun editTextSetting(view: EditText, lambda: () -> Unit) {
     })
 }
 
+@BindingAdapter("onSettingImeDone")
+fun editTextImeDone(view: EditText, lambda: () -> Unit) {
+    view.setOnEditorActionListener { _, actionId, _ ->
+        if (actionId == EditorInfo.IME_ACTION_DONE) {
+            lambda()
+
+            view.clearFocus()
+
+            val imm = view.context.getSystemService(Activity.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(view.windowToken, 0)
+
+            return@setOnEditorActionListener true
+        }
+        false
+    }
+}
+
 @BindingAdapter("onFocusChangeVisibilityOf")
 fun setEditTextOnFocusChangeVisibilityOf(editText: EditText, view: View) {
     editText.setOnFocusChangeListener { _, hasFocus ->
@@ -194,14 +202,15 @@ fun setEditTextOnFocusChangeVisibilityOf(editText: EditText, view: View) {
 }
 
 @BindingAdapter("selectedIndex", "settingListener")
-fun spinnerSetting(spinner: Spinner, selectedIndex: Int, listener: SettingListener) {
+fun spinnerSetting(spinner: Spinner, selectedIndex: Int, listener: SettingListener?) {
     spinner.setSelection(selectedIndex, true)
 
     spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
         override fun onNothingSelected(parent: AdapterView<*>?) {}
 
         override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-            listener.onListValueChanged(position)
+            // From Crashlytics it seems this method may be called with a null listener
+            listener?.onListValueChanged(position)
         }
     }
 }
@@ -242,8 +251,7 @@ private fun <T> setEntries(
     viewGroup.removeAllViews()
     if (entries != null) {
         val inflater = viewGroup.context.getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
-        for (i in entries.indices) {
-            val entry = entries[i]
+        for (entry in entries) {
             val binding = DataBindingUtil.inflate<ViewDataBinding>(
                 inflater,
                 layoutId,
@@ -296,87 +304,160 @@ fun setImageViewScaleType(imageView: ImageView, scaleType: ImageView.ScaleType) 
     imageView.scaleType = scaleType
 }
 
-@BindingAdapter("glideAvatarFallback")
-fun loadAvatarWithGlideFallback(imageView: ImageView, path: String?) {
+@BindingAdapter("coilRounded")
+fun loadRoundImageWithCoil(imageView: ImageView, path: String?) {
     if (path != null && path.isNotEmpty() && FileUtils.isExtensionImage(path)) {
-        GlideApp.with(imageView)
-            .load(path)
-            .signature(ObjectKey(coreContext.contactsManager.latestContactFetch))
-            .apply(RequestOptions.circleCropTransform())
-            .into(imageView)
-    } else {
-        Log.w("[Data Binding] [Glide] Can't load $path")
-        imageView.setImageResource(R.drawable.avatar)
-    }
-}
-
-@BindingAdapter("glidePath")
-fun loadImageWithGlide(imageView: ImageView, path: String) {
-    if (path.isNotEmpty() && FileUtils.isExtensionImage(path)) {
-        if (corePreferences.vfsEnabled && path.endsWith(FileUtils.VFS_PLAIN_FILE_EXTENSION)) {
-            GlideApp.with(imageView)
-                .load(path)
-                .diskCacheStrategy(DiskCacheStrategy.NONE)
-                .skipMemoryCache(true)
-                .into(imageView)
-        } else {
-            GlideApp.with(imageView).load(path).into(imageView)
+        imageView.load(path) {
+            transformations(CircleCropTransformation())
         }
     } else {
-        Log.w("[Data Binding] [Glide] Can't load $path")
+        Log.w("[Data Binding] [Coil] Can't load $path")
     }
 }
 
-@BindingAdapter("glideAvatar")
-fun loadAvatarWithGlide(imageView: ImageView, path: Uri?) {
-    loadAvatarWithGlide(imageView, path?.toString())
+@BindingAdapter("coil")
+fun loadImageWithCoil(imageView: ImageView, path: String?) {
+    if (path != null && path.isNotEmpty() && FileUtils.isExtensionImage(path)) {
+        if (corePreferences.vfsEnabled && path.endsWith(FileUtils.VFS_PLAIN_FILE_EXTENSION)) {
+            imageView.load(path) {
+                diskCachePolicy(CachePolicy.DISABLED)
+            }
+        } else {
+            imageView.load(path)
+        }
+    } else {
+        Log.w("[Data Binding] [Coil] Can't load $path")
+    }
 }
 
-@BindingAdapter("glideAvatar")
-fun loadAvatarWithGlide(imageView: ImageView, path: String?) {
-    if (path != null) {
-        GlideApp
-            .with(imageView)
-            .load(path)
-            .signature(ObjectKey(coreContext.contactsManager.latestContactFetch))
-            .apply(RequestOptions.circleCropTransform())
-            .listener(object : RequestListener<Drawable?> {
-                override fun onLoadFailed(
-                    e: GlideException?,
-                    model: Any?,
-                    target: Target<Drawable?>?,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    Log.w("[Data Binding] [Glide] Can't load $path")
-                    imageView.visibility = View.GONE
-                    return false
-                }
+private suspend fun loadContactPictureWithCoil(
+    imageView: ImageView,
+    contact: ContactDataInterface?,
+    useThumbnail: Boolean,
+    size: Int = 0,
+    textSize: Int = 0,
+    color: Int = 0,
+    textColor: Int = 0
+) {
+    val context = imageView.context
+    if (contact == null) {
+        imageView.load(R.drawable.icon_single_contact_avatar)
+    } else if (contact.showGroupChatAvatar) {
+        imageView.load(AppCompatResources.getDrawable(context, R.drawable.icon_multiple_contacts_avatar))
+    } else {
+        val displayName = contact.contact.value?.name ?: contact.displayName.value.orEmpty()
+        val source = contact.contact.value?.getPictureUri(useThumbnail)
 
-                override fun onResourceReady(
-                    resource: Drawable?,
-                    model: Any?,
-                    target: Target<Drawable?>?,
-                    dataSource: DataSource?,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    imageView.visibility = View.VISIBLE
-                    return false
+        imageView.load(source) {
+            transformations(CircleCropTransformation())
+            error(
+                if (displayName.isEmpty() || AppUtils.getInitials(displayName) == "+") {
+                    AppCompatResources.getDrawable(context, R.drawable.icon_single_contact_avatar)
+                } else {
+                    coroutineScope {
+                        withContext(Dispatchers.IO) {
+                            val builder = ContactAvatarGenerator(context)
+                            builder.setLabel(displayName)
+                            if (size > 0) {
+                                builder.setAvatarSize(AppUtils.getDimension(size).toInt())
+                            }
+                            if (textSize > 0) {
+                                builder.setTextSize(AppUtils.getDimension(textSize))
+                            }
+                            if (color > 0) {
+                                builder.setBackgroundColorAttribute(color)
+                            }
+                            if (textColor > 0) {
+                                builder.setTextColorResource(textColor)
+                            }
+                            builder.build()
+                        }
+                    }
                 }
-            })
-            .into(imageView)
+            )
+        }
+    }
+}
+
+@BindingAdapter("coilContact")
+fun loadContactPictureWithCoil(imageView: ImageView, contact: ContactDataInterface?) {
+    val coroutineScope = contact?.coroutineScope ?: coreContext.coroutineScope
+    coroutineScope.launch {
+        withContext(Dispatchers.Main) {
+            loadContactPictureWithCoil(imageView, contact, true)
+        }
+    }
+}
+
+@BindingAdapter("coilContactBig")
+fun loadBigContactPictureWithCoil(imageView: ImageView, contact: ContactDataInterface?) {
+    val coroutineScope = contact?.coroutineScope ?: coreContext.coroutineScope
+    coroutineScope.launch {
+        withContext(Dispatchers.Main) {
+            loadContactPictureWithCoil(
+                imageView, contact, false,
+                R.dimen.contact_avatar_big_size, R.dimen.contact_avatar_text_big_size
+            )
+        }
+    }
+}
+
+@BindingAdapter("coilVoipContactAlt")
+fun loadVoipContactPictureWithCoilAlt(imageView: ImageView, contact: ContactDataInterface?) {
+    val coroutineScope = contact?.coroutineScope ?: coreContext.coroutineScope
+    coroutineScope.launch {
+        withContext(Dispatchers.Main) {
+            loadContactPictureWithCoil(
+                imageView, contact, false,
+                R.dimen.voip_contact_avatar_max_size, R.dimen.voip_contact_avatar_text_size,
+                R.attr.voipParticipantBackgroundColor, R.color.white_color
+            )
+        }
+    }
+}
+
+@BindingAdapter("coilVoipContact")
+fun loadVoipContactPictureWithCoil(imageView: ImageView, contact: ContactDataInterface?) {
+    val coroutineScope = contact?.coroutineScope ?: coreContext.coroutineScope
+    coroutineScope.launch {
+        withContext(Dispatchers.Main) {
+            loadContactPictureWithCoil(
+                imageView, contact, false,
+                R.dimen.voip_contact_avatar_max_size, R.dimen.voip_contact_avatar_text_size,
+                R.attr.voipBackgroundColor, R.color.white_color
+            )
+        }
+    }
+}
+
+@BindingAdapter("coilGoneIfError")
+fun loadAvatarWithCoil(imageView: ImageView, path: String?) {
+    if (path != null) {
+        imageView.visibility = View.VISIBLE
+        imageView.load(path) {
+            transformations(CircleCropTransformation())
+            listener(
+                onError = { _, _ ->
+                    Log.w("[Data Binding] [Coil] Can't load $path")
+                    imageView.visibility = View.GONE
+                },
+                onSuccess = { _, _ ->
+                    imageView.visibility = View.VISIBLE
+                }
+            )
+        }
     } else {
         imageView.visibility = View.GONE
     }
 }
 
-@BindingAdapter("showSecurityLevel")
-fun ContactAvatarView.setShowAvatarSecurityLevel(visible: Boolean) {
-    this.binding.securityBadgeVisibility = visible
-}
-
-@BindingAdapter("showLimeCapability")
-fun ContactAvatarView.setShowLimeCapability(limeCapability: Boolean) {
-    this.binding.showLimeCapability = limeCapability
+@BindingAdapter("coilVideoPreview")
+fun loadVideoPreview(imageView: ImageView, path: String?) {
+    if (path != null && path.isNotEmpty() && FileUtils.isExtensionVideo(path)) {
+        imageView.load(path) {
+            videoFrameMillis(0)
+        }
+    }
 }
 
 @BindingAdapter("assistantPhoneNumberValidation")
@@ -405,6 +486,7 @@ fun addPrefixEditTextValidation(editText: EditText, enabled: Boolean) {
 
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
+        @SuppressLint("SetTextI18n")
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
             if (s == null || s.isEmpty() || !s.startsWith("+")) {
                 editText.setText("+$s")
@@ -428,7 +510,7 @@ fun addUsernameEditTextValidation(editText: EditText, enabled: Boolean) {
                 s?.matches(Regex(usernameRegexp)) == false ->
                     editText.error =
                         editText.context.getString(R.string.assistant_error_username_invalid_characters)
-                s?.length ?: 0 > usernameMaxLength -> {
+                (s?.length ?: 0) > usernameMaxLength -> {
                     editText.error =
                         editText.context.getString(R.string.assistant_error_username_too_long)
                 }
@@ -534,7 +616,7 @@ fun setEditTextErrorListener(editText: EditText, attrChange: InverseBindingListe
     })
 }
 
-@BindingAdapter("app:max")
+@BindingAdapter("max")
 fun VoiceRecordProgressBar.setProgressMax(max: Int) {
     setMax(max)
 }
@@ -549,7 +631,98 @@ fun VoiceRecordProgressBar.setSecProgress(progress: Int) {
     setSecondaryProgress(progress)
 }
 
-@BindingAdapter("app:secondaryProgressTint")
+@BindingAdapter("secondaryProgressTint")
 fun VoiceRecordProgressBar.setSecProgressTint(color: Int) {
     setSecondaryProgressTint(color)
+}
+
+@BindingAdapter("android:layout_margin")
+fun setConstraintLayoutMargins(view: View, margins: Float) {
+    val params = view.layoutParams as ConstraintLayout.LayoutParams
+    val m = margins.toInt()
+    params.setMargins(m, m, m, m)
+    view.layoutParams = params
+}
+
+@BindingAdapter("android:layout_marginTop")
+fun setConstraintLayoutTopMargin(view: View, margins: Float) {
+    val params = view.layoutParams as ConstraintLayout.LayoutParams
+    val m = margins.toInt()
+    params.setMargins(params.leftMargin, m, params.rightMargin, params.bottomMargin)
+    view.layoutParams = params
+}
+
+@BindingAdapter("android:layout_marginBottom")
+fun setConstraintLayoutBottomMargin(view: View, margins: Float) {
+    val params = view.layoutParams as ConstraintLayout.LayoutParams
+    val m = margins.toInt()
+    params.setMargins(params.leftMargin, params.topMargin, params.rightMargin, m)
+    view.layoutParams = params
+}
+
+@BindingAdapter("android:layout_marginEnd")
+fun setConstraintLayoutEndMargin(view: View, margins: Float) {
+    val params = view.layoutParams as ConstraintLayout.LayoutParams
+    val m = margins.toInt()
+    params.marginEnd = m
+    view.layoutParams = params
+}
+
+@BindingAdapter("android:onTouch")
+fun View.setTouchListener(listener: View.OnTouchListener) {
+    setOnTouchListener(listener)
+}
+
+@BindingAdapter("entries")
+fun Spinner.setEntries(entries: List<Any>?) {
+    if (entries != null) {
+        val arrayAdapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, entries)
+        arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        adapter = arrayAdapter
+    }
+}
+
+@BindingAdapter("selectedValueAttrChanged")
+fun Spinner.setInverseBindingListener(listener: InverseBindingListener) {
+    onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        override fun onItemSelected(parent: AdapterView<*>, view: View, position: Int, id: Long) {
+            if (tag != position) {
+                listener.onChange()
+            }
+        }
+
+        override fun onNothingSelected(parent: AdapterView<*>) {}
+    }
+}
+
+@BindingAdapter("selectedValue")
+fun Spinner.setSelectedValue(value: Any?) {
+    if (adapter != null) {
+        val position = (adapter as ArrayAdapter<Any>).getPosition(value)
+        setSelection(position, false)
+        tag = position
+    }
+}
+
+@InverseBindingAdapter(attribute = "selectedValue", event = "selectedValueAttrChanged")
+fun Spinner.getSelectedValue(): Any? {
+    return selectedItem
+}
+
+@BindingAdapter("participantTextureView")
+fun setParticipantTextureView(
+    textureView: TextureView,
+    conferenceParticipantData: ConferenceParticipantDeviceData
+) {
+    conferenceParticipantData.setTextureView(textureView)
+}
+
+@BindingAdapter("itemCount")
+fun ScrollDotsView.setItems(count: Int) {
+    setItemCount(count)
+}
+
+@BindingAdapter("selectedDot")
+fun ScrollDotsView.setSelectedIndex(index: Int) {
+    setSelectedDot(index)
 }

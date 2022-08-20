@@ -27,7 +27,7 @@ import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.activities.main.chat.GroupChatRoomMember
 import org.linphone.activities.main.chat.data.GroupInfoParticipantData
-import org.linphone.activities.main.viewmodels.ErrorReportingViewModel
+import org.linphone.activities.main.viewmodels.MessageNotifierViewModel
 import org.linphone.core.*
 import org.linphone.core.tools.Log
 import org.linphone.utils.Event
@@ -36,13 +36,14 @@ class GroupInfoViewModelFactory(private val chatRoom: ChatRoom?) :
     ViewModelProvider.NewInstanceFactory() {
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel?> create(modelClass: Class<T>): T {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return GroupInfoViewModel(chatRoom) as T
     }
 }
 
-class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
+class GroupInfoViewModel(val chatRoom: ChatRoom?) : MessageNotifierViewModel() {
     val createdChatRoomEvent = MutableLiveData<Event<ChatRoom>>()
+    val updatedChatRoomEvent = MutableLiveData<Event<ChatRoom>>()
 
     val subject = MutableLiveData<String>()
 
@@ -68,7 +69,7 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
             } else if (state == ChatRoom.State.CreationFailed) {
                 Log.e("[Chat Room Group Info] Group chat room creation has failed !")
                 waitForChatRoomCreation.value = false
-                onErrorEvent.value = Event(R.string.chat_room_creation_failed_snack)
+                onMessageToNotifyEvent.value = Event(R.string.chat_room_creation_failed_snack)
             }
         }
 
@@ -96,8 +97,8 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
 
     init {
         subject.value = chatRoom?.subject
-        isMeAdmin.value = chatRoom == null || (chatRoom.me?.isAdmin == true && !chatRoom.hasBeenLeft())
-        canLeaveGroup.value = chatRoom != null && !chatRoom.hasBeenLeft()
+        isMeAdmin.value = chatRoom == null || (chatRoom.me?.isAdmin == true && !chatRoom.isReadOnly)
+        canLeaveGroup.value = chatRoom != null && !chatRoom.isReadOnly
         isEncrypted.value = chatRoom?.hasCapability(ChatRoomCapabilities.Encrypted.toInt())
 
         if (chatRoom != null) updateParticipants()
@@ -116,8 +117,8 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
     fun createChatRoom() {
         waitForChatRoomCreation.value = true
         val params: ChatRoomParams = coreContext.core.createDefaultChatRoomParams()
-        params.enableEncryption(isEncrypted.value == true)
-        params.enableGroup(true)
+        params.isEncryptionEnabled = isEncrypted.value == true
+        params.isGroupEnabled = true
         if (isEncrypted.value == true) {
             params.ephemeralMode = if (corePreferences.useEphemeralPerDeviceMode)
                 ChatRoomEphemeralMode.DeviceManaged
@@ -141,7 +142,7 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
         if (chatRoom == null) {
             Log.e("[Chat Room Group Info] Couldn't create chat room!")
             waitForChatRoomCreation.value = false
-            onErrorEvent.value = Event(R.string.chat_room_creation_failed_snack)
+            onMessageToNotifyEvent.value = Event(R.string.chat_room_creation_failed_snack)
         }
     }
 
@@ -193,7 +194,7 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
             chatRoom.addParticipants(toAdd)
 
             // Go back to chat room
-            createdChatRoomEvent.value = Event(chatRoom)
+            updatedChatRoomEvent.value = Event(chatRoom)
         }
     }
 
@@ -201,7 +202,7 @@ class GroupInfoViewModel(val chatRoom: ChatRoom?) : ErrorReportingViewModel() {
         if (chatRoom != null) {
             Log.w("[Chat Room Group Info] Leaving group")
             chatRoom.leave()
-            createdChatRoomEvent.value = Event(chatRoom)
+            updatedChatRoomEvent.value = Event(chatRoom)
         }
     }
 
