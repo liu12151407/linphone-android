@@ -702,6 +702,7 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
         sharedViewModel.refreshChatRoomInListEvent.value = Event(true)
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -761,6 +762,8 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
                                     if (notAllMessagesDisplayed) {
                                         Log.w("[Chat Room] More unread messages than the screen can display, do not mark chat room as read now, wait for user to scroll to bottom")
                                     } else {
+                                        // Consider user as scrolled to the end when marking chat room as read
+                                        viewModel.isUserScrollingUp.value = false
                                         Log.i("[Chat Room] Marking chat room as read")
                                         viewModel.chatRoom.markAsRead()
                                     }
@@ -793,6 +796,7 @@ class DetailChatRoomFragment : MasterFragment<ChatRoomDetailFragmentBinding, Cha
         super.onPause()
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (resultCode == Activity.RESULT_OK) {
             lifecycleScope.launch {
