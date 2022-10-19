@@ -25,7 +25,8 @@
         android:layout_height="match_parent"
         android:layout_margin="@{controlsViewModel.fullScreenMode || controlsViewModel.pipMode ? @dimen/margin_0dp : @dimen/voip_remote_margin, default=@dimen/voip_remote_margin}"
         android:paddingBottom="@{controlsViewModel.fullScreenMode || controlsViewModel.pipMode ? @dimen/margin_0dp : @dimen/voip_buttons_fragment_margin_size}"
-        android:visibility="@{inflatedVisibility}">
+        android:visibility="@{inflatedVisibility}"
+        inflatedLifecycleOwner="@{true}">
 
         <View
             android:id="@+id/top_barrier"
@@ -206,6 +207,19 @@
             app:layout_constraintStart_toStartOf="@id/active_speaker_background"
             app:layout_constraintTop_toTopOf="@id/active_speaker_background" />
 
+        <ImageView
+            android:id="@+id/active_speaker_muted"
+            android:layout_width="@dimen/voip_conference_participant_mic_muted_icon_size_active_speaker"
+            android:layout_height="@dimen/voip_conference_participant_mic_muted_icon_size_active_speaker"
+            android:layout_margin="5dp"
+            android:background="@drawable/shape_toggle_pressed_background"
+            android:contentDescription="@string/content_description_conference_participant_mic_muted"
+            android:padding="2dp"
+            android:src="@drawable/icon_mic_muted"
+            android:visibility="@{conferenceViewModel.speakingParticipant.isMuted &amp;&amp; !conferenceViewModel.moreThanTwoParticipants ? View.VISIBLE : View.GONE, default=gone}"
+            app:layout_constraintLeft_toLeftOf="@id/active_speaker_background"
+            app:layout_constraintTop_toTopOf="@id/active_speaker_background" />
+
         <TextView
             android:id="@+id/speaking_participant_name"
             style="@style/call_remote_name_font"
@@ -224,9 +238,9 @@
             app:layout_constraintTop_toBottomOf="@id/top_barrier"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintBottom_toBottomOf="@id/hinge_bottom"
             android:layout_marginTop="@{controlsViewModel.fullScreenMode ? @dimen/margin_0dp : @dimen/voip_active_speaker_top_margin, default=@dimen/voip_active_speaker_top_margin}"
-            android:background="@drawable/shape_remote_background"
+            android:background="@drawable/shape_me_background"
             android:onClick="@{() -> controlsViewModel.toggleFullScreen()}"/>
 
         <ImageView
@@ -279,7 +293,7 @@
             android:contentDescription="@string/content_description_switch_camera"
             android:onClick="@{() -> controlsViewModel.switchCamera()}"
             android:src="@drawable/icon_call_camera_switch"
-            android:visibility="@{controlsViewModel.isSwitchCameraAvailable &amp;&amp; !controlsViewModel.pipMode &amp;&amp; !controlsViewModel.fullScreenMode ? View.VISIBLE : View.GONE}"
+            android:visibility="@{controlsViewModel.isSwitchCameraAvailable &amp;&amp; !controlsViewModel.pipMode ? View.VISIBLE : View.GONE}"
             app:layout_constraintEnd_toEndOf="@id/local_participant_background"
             app:layout_constraintTop_toTopOf="@id/local_participant_background" />
 

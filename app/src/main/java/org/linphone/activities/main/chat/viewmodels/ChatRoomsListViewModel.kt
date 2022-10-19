@@ -39,7 +39,7 @@ class ChatRoomsListViewModel : MessageNotifierViewModel() {
 
     val forwardPending = MutableLiveData<Boolean>()
 
-    val groupChatAvailable: Boolean = LinphoneUtils.isGroupChatAvailable()
+    val groupChatAvailable = MutableLiveData<Boolean>()
 
     val chatRoomIndexUpdatedEvent: MutableLiveData<Event<Int>> by lazy {
         MutableLiveData<Event<Int>>()
@@ -89,7 +89,7 @@ class ChatRoomsListViewModel : MessageNotifierViewModel() {
     }
 
     private val contactsListener = object : ContactsUpdatedListenerStub() {
-        override fun onContactUpdated(friend: Friend) {
+        override fun onContactsUpdated() {
             updateChatRooms()
         }
     }
@@ -97,6 +97,7 @@ class ChatRoomsListViewModel : MessageNotifierViewModel() {
     private var chatRoomsToDeleteCount = 0
 
     init {
+        groupChatAvailable.value = LinphoneUtils.isGroupChatAvailable()
         updateChatRooms()
         coreContext.core.addListener(listener)
         coreContext.contactsManager.addListener(contactsListener)

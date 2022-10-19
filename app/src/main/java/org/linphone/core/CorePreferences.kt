@@ -434,6 +434,9 @@ class CorePreferences constructor(private val context: Context) {
     val allowMultipleFilesAndTextInSameMessage: Boolean
         get() = config.getBool("app", "allow_multiple_files_and_text_in_same_message", true)
 
+    val enableNativeAddressBookIntegration: Boolean
+        get() = config.getBool("app", "enable_native_address_book", true)
+
     val fetchContactsFromDefaultDirectory: Boolean
         get() = config.getBool("app", "fetch_contacts_from_default_directory", true)
 
@@ -451,6 +454,9 @@ class CorePreferences constructor(private val context: Context) {
     // Will disable chat feature completely
     val disableChat: Boolean
         get() = config.getBool("app", "disable_chat_feature", false)
+
+    val forceEndToEndEncryptedChat: Boolean
+        get() = config.getBool("app", "force_lime_chat_rooms", false)
 
     // This will prevent UI from showing up, except for the launcher & the foreground service notification
     val preventInterfaceFromShowingUp: Boolean

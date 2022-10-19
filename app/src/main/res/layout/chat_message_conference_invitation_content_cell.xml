@@ -23,7 +23,8 @@
         android:orientation="vertical"
         android:padding="10dp"
         android:background="@drawable/shape_conference_invite_background"
-        android:visibility="@{inflatedVisibility}">
+        android:visibility="@{inflatedVisibility}"
+        inflatedLifecycleOwner="@{true}">
 
         <TextView
             android:layout_width="match_parent"
@@ -124,6 +125,7 @@
                 android:layout_gravity="center_vertical|end"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/button_green_background"
+                android:enabled="@{data.isOutgoing || !data.isConferenceCancelled}"
                 android:onClick="@{() -> data.callConferenceAddress()}"
                 android:paddingLeft="20dp"
                 android:paddingTop="8dp"

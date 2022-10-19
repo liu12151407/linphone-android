@@ -318,8 +318,8 @@ class ChatMessageContentData(
             conferenceDescription.value = conferenceInfo.description
 
             val state = conferenceInfo.state
-            isConferenceUpdated.value = state == ConferenceInfoState.Updated
-            isConferenceCancelled.value = state == ConferenceInfoState.Cancelled
+            isConferenceUpdated.value = state == ConferenceInfo.State.Updated
+            isConferenceCancelled.value = state == ConferenceInfo.State.Cancelled
 
             conferenceDate.value = TimestampUtils.dateToString(conferenceInfo.dateTime)
             conferenceTime.value = TimestampUtils.timeToString(conferenceInfo.dateTime)
@@ -384,7 +384,9 @@ class ChatMessageContentData(
         voiceRecordingPlayer.start()
         isVoiceRecordPlaying.value = true
         tickerFlow().onEach {
-            voiceRecordPlayingPosition.postValue(voiceRecordingPlayer.currentPosition)
+            withContext(Dispatchers.Main) {
+                voiceRecordPlayingPosition.value = voiceRecordingPlayer.currentPosition
+            }
         }.launchIn(scope)
     }
 
@@ -470,6 +472,8 @@ interface OnContentClickedListener {
     fun onContentClicked(content: Content)
 
     fun onSipAddressClicked(sipUri: String)
+
+    fun onWebUrlClicked(url: String)
 
     fun onCallConference(address: String, subject: String?)
 

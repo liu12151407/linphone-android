@@ -31,6 +31,7 @@ import org.linphone.contact.ContactsSelectionViewModel
 import org.linphone.core.*
 import org.linphone.core.tools.Log
 import org.linphone.utils.Event
+import org.linphone.utils.LinphoneUtils
 import org.linphone.utils.TimestampUtils
 
 class ConferenceSchedulingViewModel : ContactsSelectionViewModel() {
@@ -76,10 +77,10 @@ class ConferenceSchedulingViewModel : ContactsSelectionViewModel() {
     private val listener = object : ConferenceSchedulerListenerStub() {
         override fun onStateChanged(
             conferenceScheduler: ConferenceScheduler,
-            state: ConferenceSchedulerState
+            state: ConferenceScheduler.State
         ) {
             Log.i("[Conference Creation] Conference scheduler state is $state")
-            if (state == ConferenceSchedulerState.Ready) {
+            if (state == ConferenceScheduler.State.Ready) {
                 val conferenceAddress = conferenceScheduler.info?.uri
                 Log.i("[Conference Creation] Conference info created, address will be ${conferenceAddress?.asStringUriOnly()}")
                 conferenceAddress ?: return
@@ -89,16 +90,12 @@ class ConferenceSchedulingViewModel : ContactsSelectionViewModel() {
                 if (scheduleForLater.value == true && sendInviteViaChat.value == true) {
                     // Send conference info even when conf is not scheduled for later
                     // as the conference server doesn't invite participants automatically
-                    val chatRoomParams = coreContext.core.createDefaultChatRoomParams()
-                    chatRoomParams.backend = ChatRoomBackend.FlexisipChat
-                    chatRoomParams.isGroupEnabled = false
-                    chatRoomParams.isEncryptionEnabled = true
-                    chatRoomParams.subject = subject.value
+                    val chatRoomParams = LinphoneUtils.getConferenceInvitationsChatRoomParams()
                     conferenceScheduler.sendInvitations(chatRoomParams)
                 } else {
                     // Will be done in coreListener
                 }
-            } else if (state == ConferenceSchedulerState.Error) {
+            } else if (state == ConferenceScheduler.State.Error) {
                 Log.e("[Conference Creation] Failed to create conference!")
                 conferenceCreationInProgress.value = false
                 onMessageToNotifyEvent.value = Event(R.string.conference_creation_failed)
@@ -109,7 +106,6 @@ class ConferenceSchedulingViewModel : ContactsSelectionViewModel() {
             conferenceScheduler: ConferenceScheduler,
             failedInvitations: Array<out Address>?
         ) {
-            Log.i("[Conference Creation] Conference information successfully sent to all participants")
             conferenceCreationInProgress.value = false
 
             if (failedInvitations?.isNotEmpty() == true) {
@@ -117,6 +113,8 @@ class ConferenceSchedulingViewModel : ContactsSelectionViewModel() {
                     Log.e("[Conference Creation] Conference information wasn't sent to participant ${address.asStringUriOnly()}")
                 }
                 onMessageToNotifyEvent.value = Event(R.string.conference_schedule_info_not_sent_to_participant)
+            } else {
+                Log.i("[Conference Creation] Conference information successfully sent to all participants")
             }
 
             val conferenceAddress = conferenceScheduler.info?.uri
@@ -194,6 +192,11 @@ class ConferenceSchedulingViewModel : ContactsSelectionViewModel() {
         participantsData.value.orEmpty().forEach(ConferenceSchedulingParticipantData::destroy)
 
         super.onCleared()
+    }
+
+    fun prePopulateParticipantsList(participants: ArrayList<Address>, isSchedule: Boolean) {
+        selectedAddresses.value = participants
+        scheduleForLater.value = isSchedule
     }
 
     fun populateFromConferenceInfo(conferenceInfo: ConferenceInfo) {

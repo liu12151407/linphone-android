@@ -15,7 +15,7 @@
         android:layout_width="@dimen/voip_active_speaker_miniature_size"
         android:layout_height="@dimen/voip_active_speaker_miniature_size"
         android:layout_margin="5dp"
-        android:background="@{!data.isInConference &amp;&amp; !data.isJoining ? @drawable/shape_remote_paused_background : data.videoEnabled ? @drawable/shape_remote_video_background : @drawable/shape_remote_background, default=@drawable/shape_remote_background}"
+        android:background="@{!data.isInConference &amp;&amp; !data.isJoining ? @drawable/shape_remote_paused_background : @drawable/shape_remote_background, default=@drawable/shape_remote_background}"
         app:layout_alignSelf="flex_end"
         app:layout_flexShrink="0">
 
@@ -56,17 +56,6 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
-
-        <ImageView
-            android:layout_width="@dimen/conference_miniature_switch_camera_icon_size"
-            android:layout_height="@dimen/conference_miniature_switch_camera_icon_size"
-            android:layout_margin="5dp"
-            android:contentDescription="@string/content_description_switch_camera"
-            android:onClick="@{() -> data.switchCamera()}"
-            android:src="@drawable/icon_call_camera_switch"
-            android:visibility="@{data.videoEnabled &amp;&amp; data.isSwitchCameraAvailable() &amp;&amp; data.isInConference ? View.VISIBLE : View.GONE, default=gone}"
-            app:layout_constraintEnd_toEndOf="@id/participant_video_surface"
-            app:layout_constraintTop_toTopOf="@id/participant_video_surface" />
 
         <ImageView
             android:layout_width="0dp"
