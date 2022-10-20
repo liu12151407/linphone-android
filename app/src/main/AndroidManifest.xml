@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- To be able to display contacts list & match calling/called numbers -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -13,7 +14,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Starting Android 13 we need to ask notification permission -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Needed for full screen intent in incoming call notifications -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -21,15 +22,17 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Needed to attach file(s) in chat room fragment -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <!-- Starting Android 13 you need those 3 permissions instead (https://developer.android.com/about/versions/13/behavior-changes-13) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- Needed to shared downloaded files if setting is on -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
     <!-- Both permissions below are for contacts sync account, needed to store presence in native contact if enabled -->
@@ -37,7 +40,7 @@
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
 
     <!-- Needed for Telecom Manager -->
-    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
 
     <!-- Needed for overlay -->
@@ -54,20 +57,22 @@
     <application
         android:name=".LinphoneApplication"
         android:allowBackup="false"
+        android:allowNativeHeapPointerTagging="false"
         android:enableOnBackInvokedCallback="true"
+        android:extractNativeLibs="${extractNativeLibs}"
         android:icon="@mipmap/ic_launcher"
         android:label="${appLabel}"
         android:localeConfig="@xml/locales_config"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:extractNativeLibs="${extractNativeLibs}"
         android:theme="@style/AppTheme"
-        android:allowNativeHeapPointerTagging="false">
+        tools:ignore="DataExtractionRules,UnusedAttribute">
 
-        <activity android:name=".activities.main.MainActivity"
+        <activity
+            android:name=".activities.main.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize"
-            android:theme="@style/AppSplashScreenTheme">
+            android:theme="@style/AppSplashScreenTheme"
+            android:windowSoftInputMode="adjustResize">
             <nav-graph android:value="@navigation/main_nav_graph" />
 
             <intent-filter>
@@ -86,6 +91,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
+
                 <data android:mimeType="text/*" />
                 <data android:mimeType="image/*" />
                 <data android:mimeType="audio/*" />
@@ -96,16 +102,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
+
                 <data android:mimeType="image/*" />
                 <data android:mimeType="audio/*" />
                 <data android:mimeType="video/*" />
                 <data android:mimeType="application/*" />
             </intent-filter>
 
-            <intent-filter>
+            <intent-filter
+                android:scheme="http"
+                tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
+
                 <category android:name="android.intent.category.BROWSABLE" />
                 <category android:name="android.intent.category.DEFAULT" />
+
                 <data android:mimeType="${linphone_address_mime_type}" />
             </intent-filter>
 
@@ -113,8 +124,10 @@
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.DIAL" />
                 <action android:name="android.intent.action.CALL" />
+
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+
                 <data android:scheme="tel" />
                 <data android:scheme="sip" />
                 <data android:scheme="sips" />
@@ -125,7 +138,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.SENDTO" />
+
                 <category android:name="android.intent.category.DEFAULT" />
+
                 <data android:scheme="sms" />
                 <data android:scheme="smsto" />
                 <data android:scheme="mms" />
@@ -133,15 +148,18 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".activities.assistant.AssistantActivity"
-            android:windowSoftInputMode="adjustResize"/>
+        <activity
+            android:name=".activities.assistant.AssistantActivity"
+            android:windowSoftInputMode="adjustResize" />
 
-        <activity android:name=".activities.voip.CallActivity"
+        <activity
+            android:name=".activities.voip.CallActivity"
             android:launchMode="singleTask"
-            android:turnScreenOn="true"
-            android:showWhenLocked="true"
             android:resizeableActivity="true"
-            android:supportsPictureInPicture="true" />
+            android:showWhenLocked="true"
+            android:supportsPictureInPicture="true"
+            android:turnScreenOn="true"
+            tools:ignore="UnusedAttribute" />
 
         <activity
             android:name=".activities.chat_bubble.ChatBubbleActivity"
@@ -155,10 +173,11 @@
             android:name=".core.CoreService"
             android:exported="false"
             android:foregroundServiceType="phoneCall|camera|microphone"
-            android:stopWithTask="false"
-            android:label="@string/app_name" />
+            android:label="@string/app_name"
+            android:stopWithTask="false" />
 
-        <service android:name="org.linphone.core.tools.firebase.FirebaseMessaging"
+        <service
+            android:name="org.linphone.core.tools.firebase.FirebaseMessaging"
             android:enabled="${firebaseServiceEnabled}"
             android:exported="false">
             <intent-filter>
@@ -181,7 +200,8 @@
                 android:resource="@xml/contacts" />
         </service>
 
-        <service android:name=".contact.DummyAuthenticationService"
+        <service
+            android:name=".contact.DummyAuthenticationService"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.accounts.AccountAuthenticator" />
@@ -192,9 +212,10 @@
                 android:resource="@xml/authenticator" />
         </service>
 
-        <service android:name=".telecom.TelecomConnectionService"
-            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
-            android:exported="true">
+        <service
+            android:name=".telecom.TelecomConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
             <intent-filter>
                 <action android:name="android.telecom.ConnectionService" />
             </intent-filter>
@@ -202,10 +223,11 @@
 
         <!-- Receivers -->
 
-        <receiver android:name=".core.CorePushReceiver"
+        <receiver
+            android:name=".core.CorePushReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="org.linphone.core.action.PUSH_RECEIVED"/>
+                <action android:name="org.linphone.core.action.PUSH_RECEIVED" />
             </intent-filter>
         </receiver>
 
@@ -214,7 +236,8 @@
             android:enabled="true"
             android:exported="false" />
 
-        <receiver android:name=".core.BootReceiver"
+        <receiver
+            android:name=".core.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
