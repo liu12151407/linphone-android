@@ -58,16 +58,14 @@ class AccountLoginFragment : AbstractPhoneFragment<AssistantAccountLoginFragment
         )[AccountLoginViewModel::class.java]
         binding.viewModel = viewModel
 
-        if (resources.getBoolean(R.bool.isTablet)) {
-            viewModel.loginWithUsernamePassword.value = true
-        }
-
         binding.setInfoClickListener {
             showPhoneNumberInfoDialog()
         }
 
         binding.setSelectCountryClickListener {
-            CountryPickerFragment(viewModel).show(childFragmentManager, "CountryPicker")
+            val countryPickerFragment = CountryPickerFragment()
+            countryPickerFragment.listener = viewModel
+            countryPickerFragment.show(childFragmentManager, "CountryPicker")
         }
 
         binding.setForgotPasswordClickListener {
@@ -75,6 +73,10 @@ class AccountLoginFragment : AbstractPhoneFragment<AssistantAccountLoginFragment
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             intent.data = Uri.parse(getString(R.string.assistant_forgotten_password_link))
             startActivity(intent)
+        }
+
+        viewModel.prefix.observe(viewLifecycleOwner) { internationalPrefix ->
+            viewModel.getCountryNameFromPrefix(internationalPrefix)
         }
 
         viewModel.goToSmsValidationEvent.observe(

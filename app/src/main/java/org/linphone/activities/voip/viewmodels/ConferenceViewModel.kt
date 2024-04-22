@@ -53,10 +53,16 @@ class ConferenceViewModel : ViewModel() {
 
     val maxParticipantsForMosaicLayout = corePreferences.maxConferenceParticipantsForMosaicLayout
 
+    val twoOrMoreParticipants = MutableLiveData<Boolean>()
     val moreThanTwoParticipants = MutableLiveData<Boolean>()
 
+    val speakingParticipantFound = MutableLiveData<Boolean>()
     val speakingParticipant = MutableLiveData<ConferenceParticipantDeviceData>()
+    val speakingParticipantVideoEnabled = MutableLiveData<Boolean>()
     val meParticipant = MutableLiveData<ConferenceParticipantDeviceData>()
+
+    val isBroadcast = MutableLiveData<Boolean>()
+    val isMeListenerOnly = MutableLiveData<Boolean>()
 
     val participantAdminStatusChangedEvent: MutableLiveData<Event<ConferenceParticipantData>> by lazy {
         MutableLiveData<Event<ConferenceParticipantData>>()
@@ -78,6 +84,12 @@ class ConferenceViewModel : ViewModel() {
         MutableLiveData<Event<Boolean>>()
     }
 
+    private var waitForNextStreamsRunningToUpdateLayout = false
+
+    val reloadConferenceFragmentEvent: MutableLiveData<Event<Boolean>> by lazy {
+        MutableLiveData<Event<Boolean>>()
+    }
+
     private val conferenceListener = object : ConferenceListenerStub() {
         override fun onParticipantAdded(conference: Conference, participant: Participant) {
             Log.i("[Conference] Participant added: ${participant.address.asStringUriOnly()}")
@@ -87,22 +99,20 @@ class ConferenceViewModel : ViewModel() {
         override fun onParticipantRemoved(conference: Conference, participant: Participant) {
             Log.i("[Conference] Participant removed: ${participant.address.asStringUriOnly()}")
             updateParticipantsList(conference)
-
-            if (conferenceParticipants.value.orEmpty().isEmpty()) {
-                allParticipantsLeftEvent.value = Event(true)
-            }
         }
 
         override fun onParticipantDeviceAdded(
             conference: Conference,
             participantDevice: ParticipantDevice
         ) {
-            Log.i("[Conference] Participant device added: ${participantDevice.address.asStringUriOnly()}")
-            addParticipantDevice(participantDevice)
+            Log.i(
+                "[Conference] Participant device added: ${participantDevice.address.asStringUriOnly()}"
+            )
+            addParticipantDevice(conference, participantDevice)
 
             if (conferenceParticipantDevices.value.orEmpty().size == 2) {
                 secondParticipantJoinedEvent.value = Event(true)
-            } else if (conferenceParticipantDevices.value.orEmpty().size == 3) {
+            } else if (conferenceParticipantDevices.value.orEmpty().size > 2) {
                 moreThanTwoParticipantsJoinedEvent.value = Event(true)
             }
         }
@@ -111,11 +121,21 @@ class ConferenceViewModel : ViewModel() {
             conference: Conference,
             participantDevice: ParticipantDevice
         ) {
-            Log.i("[Conference] Participant device removed: ${participantDevice.address.asStringUriOnly()}")
+            Log.i(
+                "[Conference] Participant device removed: ${participantDevice.address.asStringUriOnly()}"
+            )
             removeParticipantDevice(participantDevice)
 
-            if (conferenceParticipantDevices.value.orEmpty().size == 2) {
-                secondParticipantJoinedEvent.value = Event(true)
+            when (conferenceParticipantDevices.value.orEmpty().size) {
+                1 -> {
+                    speakingParticipant.value?.videoEnabled?.value = false
+                    speakingParticipantVideoEnabled.value = false
+                    allParticipantsLeftEvent.value = Event(true)
+                }
+                2 -> {
+                    secondParticipantJoinedEvent.value = Event(true)
+                }
+                else -> {}
             }
         }
 
@@ -123,22 +143,32 @@ class ConferenceViewModel : ViewModel() {
             conference: Conference,
             participant: Participant
         ) {
-            Log.i("[Conference] Participant admin status changed [${participant.address.asStringUriOnly()}] is ${if (participant.isAdmin) "now admin" else "no longer admin"}")
+            Log.i(
+                "[Conference] Participant admin status changed [${participant.address.asStringUriOnly()}] is ${if (participant.isAdmin) "now admin" else "no longer admin"}"
+            )
             isMeAdmin.value = conference.me.isAdmin
             updateParticipantsList(conference)
 
             if (conference.me.address.weakEqual(participant.address)) {
-                Log.i("[Conference] Found me participant [${participant.address.asStringUriOnly()}]")
+                Log.i(
+                    "[Conference] Found me participant [${participant.address.asStringUriOnly()}]"
+                )
                 val participantData = ConferenceParticipantData(conference, participant)
                 participantAdminStatusChangedEvent.value = Event(participantData)
                 return
             }
 
-            val participantData = conferenceParticipants.value.orEmpty().find { data -> data.participant.address.weakEqual(participant.address) }
+            val participantData = conferenceParticipants.value.orEmpty().find { data ->
+                data.participant.address.weakEqual(
+                    participant.address
+                )
+            }
             if (participantData != null) {
                 participantAdminStatusChangedEvent.value = Event(participantData)
             } else {
-                Log.w("[Conference] Failed to find participant [${participant.address.asStringUriOnly()}] in conferenceParticipants list")
+                Log.w(
+                    "[Conference] Failed to find participant [${participant.address.asStringUriOnly()}] in conferenceParticipants list"
+                )
             }
         }
 
@@ -150,54 +180,71 @@ class ConferenceViewModel : ViewModel() {
         override fun onParticipantDeviceStateChanged(
             conference: Conference,
             device: ParticipantDevice,
-            state: ParticipantDeviceState
+            state: ParticipantDevice.State
         ) {
             if (conference.isMe(device.address)) {
                 when (state) {
-                    ParticipantDeviceState.Present -> {
+                    ParticipantDevice.State.Present -> {
                         Log.i("[Conference] Entered conference")
                         isConferenceLocallyPaused.value = false
                     }
-                    ParticipantDeviceState.OnHold -> {
+                    ParticipantDevice.State.OnHold -> {
                         Log.i("[Conference] Left conference")
                         isConferenceLocallyPaused.value = true
                     }
                     else -> {}
                 }
+            } else {
+                speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
             }
         }
 
-        override fun onParticipantDeviceIsSpeakingChanged(
+        override fun onActiveSpeakerParticipantDevice(
             conference: Conference,
-            participantDevice: ParticipantDevice,
-            isSpeaking: Boolean
+            participantDevice: ParticipantDevice
         ) {
-            Log.i("[Conference] Participant [${participantDevice.address.asStringUriOnly()}] is ${if (isSpeaking) "speaking" else "not speaking"}")
-            if (isSpeaking) {
-                val device = conferenceParticipantDevices.value.orEmpty().find {
-                    it.participantDevice.address.weakEqual(participantDevice.address)
-                }
-                if (device != null && device != speakingParticipant.value) {
-                    Log.i("[Conference] Found participant device")
-                    if (!device.isMe) {
-                        // TODO: FIXME: remove, this is a temporary workaround to not have your name
-                        //  displayed above someone else video in active speaker layout when you talk
-                        speakingParticipant.value = device!!
-                    }
-                } else if (device == null) {
-                    Log.w("[Conference] Participant device [${participantDevice.address.asStringUriOnly()}] is speaking but couldn't find it in devices list")
-                }
+            Log.i(
+                "[Conference] Participant [${participantDevice.address.asStringUriOnly()}] is currently being displayed as active speaker"
+            )
+            val device = conferenceParticipantDevices.value.orEmpty().find {
+                it.participantDevice.address.weakEqual(participantDevice.address)
             }
+
+            if (device != null && device != speakingParticipant.value) {
+                Log.i("[Conference] Found actively speaking participant device")
+                speakingParticipant.value?.isActiveSpeaker?.value = false
+                device.isActiveSpeaker.value = true
+                speakingParticipant.value = device!!
+                speakingParticipantFound.value = true
+                speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
+            } else if (device == null) {
+                Log.w(
+                    "[Conference] Participant device [${participantDevice.address.asStringUriOnly()}] is the active speaker but couldn't find it in devices list"
+                )
+            }
+        }
+
+        override fun onParticipantDeviceMediaAvailabilityChanged(
+            conference: Conference,
+            device: ParticipantDevice
+        ) {
+            speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
+        }
+
+        override fun onParticipantDeviceMediaCapabilityChanged(
+            conference: Conference,
+            device: ParticipantDevice
+        ) {
+            speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
         }
 
         override fun onStateChanged(conference: Conference, state: Conference.State) {
             Log.i("[Conference] State changed: $state")
-            isVideoConference.value = conference.currentParams.isVideoEnabled
+            isVideoConference.value = conference.currentParams.isVideoEnabled && !corePreferences.disableVideo
 
             when (state) {
                 Conference.State.Created -> {
                     configureConference(conference)
-                    conferenceCreationPending.value = false
                 }
                 Conference.State.TerminationPending -> {
                     terminateConference(conference)
@@ -217,17 +264,44 @@ class ConferenceViewModel : ViewModel() {
             if (state == Conference.State.Instantiated) {
                 conferenceCreationPending.value = true
                 initConference(conference)
+            } else if (state == Conference.State.Created) {
+                if (conferenceCreationPending.value == true) {
+                    conferenceCreationPending.value = false
+                }
+            }
+        }
+
+        override fun onCallStateChanged(
+            core: Core,
+            call: Call,
+            state: Call.State?,
+            message: String
+        ) {
+            if (state == Call.State.StreamsRunning && waitForNextStreamsRunningToUpdateLayout) {
+                waitForNextStreamsRunningToUpdateLayout = false
+                reloadConferenceFragmentEvent.value = Event(true)
+            }
+            if (state == Call.State.StreamsRunning && call.conference?.isIn == true) {
+                isConferenceLocallyPaused.value = false
+                conferenceParticipantDevices.value?.forEach {
+                    if (it.isMe) {
+                        it.isInConference.value = true
+                    }
+                }
             }
         }
     }
 
     init {
         coreContext.core.addListener(listener)
+        conferenceExists.value = false
 
         conferenceParticipants.value = arrayListOf()
         conferenceParticipantDevices.value = arrayListOf()
         activeSpeakerConferenceParticipantDevices.addSource(conferenceParticipantDevices) {
-            activeSpeakerConferenceParticipantDevices.value = conferenceParticipantDevices.value.orEmpty().drop(1)
+            activeSpeakerConferenceParticipantDevices.value = conferenceParticipantDevices.value.orEmpty().drop(
+                1
+            )
         }
 
         subject.value = AppUtils.getString(R.string.conference_default_title)
@@ -246,10 +320,13 @@ class ConferenceViewModel : ViewModel() {
             Log.i("[Conference] Found an existing conference: $conference in state $state")
             if (state != Conference.State.TerminationPending && state != Conference.State.Terminated) {
                 initConference(conference)
-                if (state == Conference.State.Created) {
-                    configureConference(conference)
-                } else {
+                if (state == Conference.State.Instantiated) {
                     conferenceCreationPending.value = true
+                } else if (state == Conference.State.Created) {
+                    if (conferenceCreationPending.value == true) {
+                        conferenceCreationPending.value = false
+                    }
+                    configureConference(conference)
                 }
             }
         }
@@ -260,8 +337,12 @@ class ConferenceViewModel : ViewModel() {
         conference.value?.removeListener(conferenceListener)
 
         conferenceParticipants.value.orEmpty().forEach(ConferenceParticipantData::destroy)
-        conferenceParticipantDevices.value.orEmpty().forEach(ConferenceParticipantDeviceData::destroy)
-        activeSpeakerConferenceParticipantDevices.value.orEmpty().forEach(ConferenceParticipantDeviceData::destroy)
+        conferenceParticipantDevices.value.orEmpty().forEach(
+            ConferenceParticipantDeviceData::destroy
+        )
+        activeSpeakerConferenceParticipantDevices.value.orEmpty().forEach(
+            ConferenceParticipantDeviceData::destroy
+        )
 
         super.onCleared()
     }
@@ -281,7 +362,9 @@ class ConferenceViewModel : ViewModel() {
             Log.i("[Conference] Stopping conference recording")
             conference.value?.stopRecording()
         } else {
-            val path = LinphoneUtils.getRecordingFilePathForConference(conference.value?.currentParams?.subject)
+            val path = LinphoneUtils.getRecordingFilePathForConference(
+                conference.value?.currentParams?.subject
+            )
             Log.i("[Conference] Starting recording in file $path")
             conference.value?.startRecording(path)
         }
@@ -313,9 +396,9 @@ class ConferenceViewModel : ViewModel() {
             moreThanTwoParticipantsJoinedEvent.value = Event(true)
         }
 
-        isConferenceLocallyPaused.value = !conference.isIn
+        isConferenceLocallyPaused.value = if (conference.call == null) false else !conference.isIn
         isMeAdmin.value = conference.me.isAdmin
-        isVideoConference.value = conference.currentParams.isVideoEnabled
+        isVideoConference.value = conference.currentParams.isVideoEnabled && !corePreferences.disableVideo
         subject.value = LinphoneUtils.getConferenceSubject(conference)
 
         updateConferenceLayout(conference)
@@ -338,7 +421,21 @@ class ConferenceViewModel : ViewModel() {
         }
     }
 
-    fun changeLayout(layout: ConferenceDisplayMode) {
+    fun switchLayoutFromAudioOnlyToActiveSpeaker() {
+        if (conferenceDisplayMode.value == ConferenceDisplayMode.AUDIO_ONLY) {
+            Log.i(
+                "[Conference] Trying to switch from AUDIO_ONLY to ACTIVE_SPEAKER and toggle video ON"
+            )
+            changeLayout(ConferenceDisplayMode.ACTIVE_SPEAKER, true)
+            waitForNextStreamsRunningToUpdateLayout = true
+        } else {
+            Log.w(
+                "[Conference] Can't switch from AUDIO_ONLY to ACTIVE_SPEAKER as current display mode isn't AUDIO_ONLY but ${conferenceDisplayMode.value}"
+            )
+        }
+    }
+
+    fun changeLayout(layout: ConferenceDisplayMode, forceSendingVideo: Boolean) {
         Log.i("[Conference] Trying to change conference layout to $layout")
         val conference = conference.value
         if (conference != null) {
@@ -351,9 +448,20 @@ class ConferenceViewModel : ViewModel() {
                 }
 
                 params.isVideoEnabled = layout != ConferenceDisplayMode.AUDIO_ONLY
+                if (forceSendingVideo) {
+                    Log.w("[Conference] Forcing video direction to SendRecv")
+                    params.videoDirection = MediaDirection.SendRecv
+                } else {
+                    if (conferenceDisplayMode.value == ConferenceDisplayMode.AUDIO_ONLY) {
+                        // Previous layout was audio only, make sure video isn't sent without user consent when switching layout
+                        params.videoDirection = MediaDirection.RecvOnly
+                    }
+                    Log.i("[Conference] Video direction is ${params.videoDirection}")
+                }
+
                 params.conferenceVideoLayout = when (layout) {
-                    ConferenceDisplayMode.GRID -> ConferenceLayout.Grid
-                    else -> ConferenceLayout.ActiveSpeaker
+                    ConferenceDisplayMode.GRID -> Conference.Layout.Grid
+                    else -> Conference.Layout.ActiveSpeaker
                 }
                 call.update(params)
 
@@ -370,25 +478,30 @@ class ConferenceViewModel : ViewModel() {
 
     private fun updateConferenceLayout(conference: Conference) {
         val call = conference.call
-        if (call == null) {
-            Log.e("[Conference] Conference call is null!")
-            return
-        }
+        var videoDirection = MediaDirection.Inactive
 
-        val params = call.params
-        conferenceDisplayMode.value = if (!params.isVideoEnabled) {
-            ConferenceDisplayMode.AUDIO_ONLY
+        if (call == null) {
+            conferenceDisplayMode.value = ConferenceDisplayMode.AUDIO_ONLY
+            Log.w("[Conference] Call is null, assuming audio only layout for local conference")
         } else {
-            when (params.conferenceVideoLayout) {
-                ConferenceLayout.Grid -> ConferenceDisplayMode.GRID
-                else -> ConferenceDisplayMode.ACTIVE_SPEAKER
+            val params = call.params
+            videoDirection = params.videoDirection
+            conferenceDisplayMode.value = if (!params.isVideoEnabled) {
+                ConferenceDisplayMode.AUDIO_ONLY
+            } else {
+                when (params.conferenceVideoLayout) {
+                    Conference.Layout.Grid -> ConferenceDisplayMode.GRID
+                    else -> ConferenceDisplayMode.ACTIVE_SPEAKER
+                }
             }
         }
 
         val list = sortDevicesDataList(conferenceParticipantDevices.value.orEmpty())
         conferenceParticipantDevices.value = list
 
-        Log.i("[Conference] Conference current layout is: ${conferenceDisplayMode.value}")
+        Log.i(
+            "[Conference] Current layout is [${conferenceDisplayMode.value}], video direction is [$videoDirection]"
+        )
     }
 
     private fun terminateConference(conference: Conference) {
@@ -398,8 +511,12 @@ class ConferenceViewModel : ViewModel() {
         conference.removeListener(conferenceListener)
 
         conferenceParticipants.value.orEmpty().forEach(ConferenceParticipantData::destroy)
-        conferenceParticipantDevices.value.orEmpty().forEach(ConferenceParticipantDeviceData::destroy)
-        activeSpeakerConferenceParticipantDevices.value.orEmpty().forEach(ConferenceParticipantDeviceData::destroy)
+        conferenceParticipantDevices.value.orEmpty().forEach(
+            ConferenceParticipantDeviceData::destroy
+        )
+        activeSpeakerConferenceParticipantDevices.value.orEmpty().forEach(
+            ConferenceParticipantDeviceData::destroy
+        )
 
         conferenceParticipants.value = arrayListOf()
         conferenceParticipantDevices.value = arrayListOf()
@@ -413,7 +530,9 @@ class ConferenceViewModel : ViewModel() {
         Log.i("[Conference] Conference has ${participantsList.size} participants")
         for (participant in participantsList) {
             val participantDevices = participant.devices
-            Log.i("[Conference] Participant found: ${participant.address.asStringUriOnly()} with ${participantDevices.size} device(s)")
+            Log.i(
+                "[Conference] Participant found: ${participant.address.asStringUriOnly()} with ${participantDevices.size} device(s)"
+            )
 
             val participantData = ConferenceParticipantData(conference, participant)
             participants.add(participantData)
@@ -423,38 +542,115 @@ class ConferenceViewModel : ViewModel() {
     }
 
     private fun updateParticipantsDevicesList(conference: Conference) {
-        conferenceParticipantDevices.value.orEmpty().forEach(ConferenceParticipantDeviceData::destroy)
-        activeSpeakerConferenceParticipantDevices.value.orEmpty().forEach(ConferenceParticipantDeviceData::destroy)
+        conferenceParticipantDevices.value.orEmpty().forEach(
+            ConferenceParticipantDeviceData::destroy
+        )
+        activeSpeakerConferenceParticipantDevices.value.orEmpty().forEach(
+            ConferenceParticipantDeviceData::destroy
+        )
         val devices = arrayListOf<ConferenceParticipantDeviceData>()
 
         val participantsList = conference.participantList
         Log.i("[Conference] Conference has ${participantsList.size} participants")
-        for (participant in participantsList) {
-            val participantDevices = participant.devices
-            Log.i("[Conference] Participant found: ${participant.address.asStringUriOnly()} with ${participantDevices.size} device(s)")
 
-            for (device in participantDevices) {
-                Log.i("[Conference] Participant device found: ${device.name} (${device.address.asStringUriOnly()})")
-                val deviceData = ConferenceParticipantDeviceData(device, false)
-                devices.add(deviceData)
+        val activelySpeakingParticipantDevice = conference.activeSpeakerParticipantDevice
+        var foundActivelySpeakingParticipantDevice = false
+        speakingParticipantFound.value = false
+        speakingParticipantVideoEnabled.value = false
+
+        val conferenceInfo = conference.core.findConferenceInformationFromUri(
+            conference.conferenceAddress
+        )
+        var allSpeaker = true
+        for (info in conferenceInfo?.participantInfos.orEmpty()) {
+            if (info.role == Participant.Role.Listener) {
+                allSpeaker = false
             }
         }
-        if (devices.isNotEmpty()) {
-            speakingParticipant.value = devices.first()
+        isBroadcast.value = !allSpeaker
+        if (!allSpeaker) {
+            Log.i(
+                "[Conference] Not all participants are speaker, considering it is a broadcast"
+            )
+        }
+
+        for (participant in participantsList) {
+            val participantDevices = participant.devices
+            Log.i(
+                "[Conference] Participant found: ${participant.address.asStringUriOnly()} with ${participantDevices.size} device(s)"
+            )
+
+            for (device in participantDevices) {
+                Log.i(
+                    "[Conference] Participant device found: ${device.name} (${device.address.asStringUriOnly()})"
+                )
+
+                val info = conferenceInfo?.participantInfos?.find {
+                    it.address.weakEqual(participant.address)
+                }
+                if (info != null) {
+                    Log.i("[Conference] Participant role is [${info.role.name}]")
+                    val listener = info.role == Participant.Role.Listener || info.role == Participant.Role.Unknown
+                    if (listener) {
+                        continue
+                    }
+                }
+
+                val deviceData = ConferenceParticipantDeviceData(device, false)
+                devices.add(deviceData)
+
+                if (activelySpeakingParticipantDevice == device) {
+                    Log.i(
+                        "[Conference] Actively speaking participant device found: ${device.name} (${device.address.asStringUriOnly()})"
+                    )
+                    speakingParticipant.value = deviceData
+                    deviceData.isActiveSpeaker.value = true
+                    foundActivelySpeakingParticipantDevice = true
+                    speakingParticipantFound.value = true
+                    speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
+                }
+            }
+        }
+
+        if (!foundActivelySpeakingParticipantDevice && devices.isNotEmpty()) {
+            Log.w(
+                "[Conference] Actively speaking participant device not found, using first participant device available"
+            )
+            val deviceData = devices.first()
+            speakingParticipant.value = deviceData
+            deviceData.isActiveSpeaker.value = true
+            speakingParticipantFound.value = true
+            speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
         }
 
         for (device in conference.me.devices) {
-            Log.i("[Conference] Participant device for myself found: ${device.name} (${device.address.asStringUriOnly()})")
+            Log.i(
+                "[Conference] Participant device for myself found: ${device.name} (${device.address.asStringUriOnly()})"
+            )
+
+            val info = conferenceInfo?.participantInfos?.find {
+                it.address.weakEqual(device.address)
+            }
+            if (info != null) {
+                Log.i("[Conference] Me role is [${info.role.name}]")
+                val listener = info.role == Participant.Role.Listener || info.role == Participant.Role.Unknown
+                isMeListenerOnly.value = listener
+                if (listener) {
+                    continue
+                }
+            }
+
             val deviceData = ConferenceParticipantDeviceData(device, true)
             devices.add(deviceData)
             meParticipant.value = deviceData
         }
 
         conferenceParticipantDevices.value = devices
+        twoOrMoreParticipants.value = devices.size >= 2
         moreThanTwoParticipants.value = devices.size > 2
     }
 
-    private fun addParticipantDevice(device: ParticipantDevice) {
+    private fun addParticipantDevice(conference: Conference, device: ParticipantDevice) {
         val devices = arrayListOf<ConferenceParticipantDeviceData>()
         devices.addAll(conferenceParticipantDevices.value.orEmpty())
 
@@ -462,42 +658,88 @@ class ConferenceViewModel : ViewModel() {
             it.participantDevice.address.weakEqual(device.address)
         }
         if (existingDevice != null) {
-            Log.e("[Conference] Participant is already in devices list: ${device.name} (${device.address.asStringUriOnly()})")
+            Log.e(
+                "[Conference] Participant is already in devices list: ${device.name} (${device.address.asStringUriOnly()})"
+            )
             return
         }
 
-        Log.i("[Conference] New participant device found: ${device.name} (${device.address.asStringUriOnly()})")
+        Log.i(
+            "[Conference] New participant device found: ${device.name} (${device.address.asStringUriOnly()})"
+        )
+
+        val conferenceInfo = conference.core.findConferenceInformationFromUri(
+            conference.conferenceAddress
+        )
+        val info = conferenceInfo?.participantInfos?.find {
+            it.address.weakEqual(device.address)
+        }
+        if (info != null) {
+            Log.i("[Conference] New participant role is [${info.role.name}]")
+            val listener =
+                info.role == Participant.Role.Listener || info.role == Participant.Role.Unknown
+            if (listener) {
+                return
+            }
+        }
+
         val deviceData = ConferenceParticipantDeviceData(device, false)
         devices.add(deviceData)
 
         val sortedDevices = sortDevicesDataList(devices)
 
-        if (speakingParticipant.value == null) {
+        if (speakingParticipant.value == null || speakingParticipantFound.value == false) {
             speakingParticipant.value = deviceData
+            deviceData.isActiveSpeaker.value = true
+            speakingParticipantFound.value = true
+            speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
         }
 
         conferenceParticipantDevices.value = sortedDevices
+        twoOrMoreParticipants.value = sortedDevices.size >= 2
         moreThanTwoParticipants.value = sortedDevices.size > 2
     }
 
     private fun removeParticipantDevice(device: ParticipantDevice) {
         val devices = arrayListOf<ConferenceParticipantDeviceData>()
+        var removedDeviceWasActiveSpeaker = false
 
         for (participantDevice in conferenceParticipantDevices.value.orEmpty()) {
             if (participantDevice.participantDevice.address.asStringUriOnly() != device.address.asStringUriOnly()) {
                 devices.add(participantDevice)
             } else {
+                if (speakingParticipant.value == participantDevice) {
+                    Log.w(
+                        "[Conference] Removed participant device was the actively speaking participant device"
+                    )
+                    removedDeviceWasActiveSpeaker = true
+                }
                 participantDevice.destroy()
             }
         }
-        if (devices.size == conferenceParticipantDevices.value.orEmpty().size) {
-            Log.e("[Conference] Failed to remove participant device: ${device.name} (${device.address.asStringUriOnly()})")
-        } else {
-            Log.i("[Conference] Participant device removed: ${device.name} (${device.address.asStringUriOnly()})")
+
+        val devicesCount = devices.size
+        if (devicesCount == conferenceParticipantDevices.value.orEmpty().size) {
+            Log.e(
+                "[Conference] Failed to remove participant device: ${device.name} (${device.address.asStringUriOnly()})"
+            )
+        }
+
+        if (removedDeviceWasActiveSpeaker && devicesCount > 1) {
+            Log.w(
+                "[Conference] Updating actively speaking participant device using first one available"
+            )
+            // Using second device as first is ourselves
+            val deviceData = devices[1]
+            speakingParticipant.value = deviceData
+            deviceData.isActiveSpeaker.value = true
+            speakingParticipantFound.value = true
+            speakingParticipantVideoEnabled.value = speakingParticipant.value?.isInConference?.value == true && speakingParticipant.value?.isSendingVideo?.value == true
         }
 
         conferenceParticipantDevices.value = devices
-        moreThanTwoParticipants.value = devices.size > 2
+        twoOrMoreParticipants.value = devicesCount >= 2
+        moreThanTwoParticipants.value = devicesCount > 2
     }
 
     private fun sortDevicesDataList(devices: List<ConferenceParticipantDeviceData>): ArrayList<ConferenceParticipantDeviceData> {
@@ -515,7 +757,9 @@ class ConferenceViewModel : ViewModel() {
                 sortedList.size - 1
             }
             if (index != expectedIndex) {
-                Log.i("[Conference] Me device data is at index $index, moving it to index $expectedIndex")
+                Log.i(
+                    "[Conference] Me device data is at index $index, moving it to index $expectedIndex"
+                )
                 sortedList.removeAt(index)
                 sortedList.add(expectedIndex, meDeviceData)
             }

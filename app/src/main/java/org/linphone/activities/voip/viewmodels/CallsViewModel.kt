@@ -30,7 +30,6 @@ import org.linphone.core.*
 import org.linphone.core.tools.Log
 import org.linphone.utils.AppUtils
 import org.linphone.utils.Event
-import org.linphone.utils.FileUtils
 import org.linphone.utils.PermissionHelper
 
 class CallsViewModel : ViewModel() {
@@ -47,10 +46,6 @@ class CallsViewModel : ViewModel() {
     val isMicrophoneMuted = MutableLiveData<Boolean>()
 
     val isMuteMicrophoneEnabled = MutableLiveData<Boolean>()
-
-    val askWriteExternalStoragePermissionEvent: MutableLiveData<Event<Boolean>> by lazy {
-        MutableLiveData<Event<Boolean>>()
-    }
 
     val callConnectedEvent: MutableLiveData<Event<Call>> by lazy {
         MutableLiveData<Event<Call>>()
@@ -101,15 +96,21 @@ class CallsViewModel : ViewModel() {
             }
 
             val currentCall = core.currentCall
+            Log.i("[Calls] Current call is ${currentCall?.remoteAddress?.asStringUriOnly()}")
             if (currentCall != null && currentCallData.value?.call != currentCall) {
                 updateCurrentCallData(currentCall)
             } else if (currentCall == null && core.callsNb > 0) {
+                updateCurrentCallData(null)
+            } else if (currentCallData.value == null) {
                 updateCurrentCallData(currentCall)
             }
 
             if (state == Call.State.End || state == Call.State.Released || state == Call.State.Error) {
                 removeCallFromList(call)
                 if (core.callsNb > 0) {
+                    Log.i(
+                        "[Calls] Call has ended but there are still at least one other existing call"
+                    )
                     callEndedEvent.value = Event(call)
                 }
             } else if (call.state == Call.State.UpdatedByRemote) {
@@ -139,8 +140,11 @@ class CallsViewModel : ViewModel() {
     init {
         coreContext.core.addListener(listener)
 
-        val currentCall = coreContext.core.currentCall
+        val currentCall = coreContext.core.currentCall ?: coreContext.core.calls.firstOrNull()
         if (currentCall != null) {
+            Log.i(
+                "[Calls] Initializing ViewModel using call [${currentCall.remoteAddress.asStringUriOnly()}] as current"
+            )
             currentCallData.value?.destroy()
 
             val viewModel = CallData(currentCall)
@@ -176,8 +180,14 @@ class CallsViewModel : ViewModel() {
             return
         }
 
-        val micMuted = currentCallData.value?.call?.microphoneMuted ?: false
-        currentCallData.value?.call?.microphoneMuted = !micMuted
+        val call = currentCallData.value?.call
+        if (call != null && call.conference != null) {
+            val micMuted = call.conference?.microphoneMuted ?: false
+            call.conference?.microphoneMuted = !micMuted
+        } else {
+            val micMuted = call?.microphoneMuted ?: false
+            call?.microphoneMuted = !micMuted
+        }
         updateMicState()
     }
 
@@ -190,20 +200,6 @@ class CallsViewModel : ViewModel() {
         params.isVideoEnabled = true
         val conference = core.createConferenceWithParams(params)
         conference?.addParticipants(core.calls)
-    }
-
-    fun takeSnapshot() {
-        if (!PermissionHelper.get().hasWriteExternalStoragePermission()) {
-            askWriteExternalStoragePermissionEvent.value = Event(true)
-        } else {
-            if (currentCallData.value?.call?.currentParams?.isVideoEnabled == true) {
-                val fileName = System.currentTimeMillis().toString() + ".jpeg"
-                Log.i("[Calls] Snapshot will be save under $fileName")
-                currentCallData.value?.call?.takeVideoSnapshot(FileUtils.getFileStoragePath(fileName).absolutePath)
-            } else {
-                Log.e("[Calls] Current call doesn't have video, can't take snapshot")
-            }
-        }
     }
 
     private fun initCallList() {
@@ -238,14 +234,12 @@ class CallsViewModel : ViewModel() {
         Log.i("[Calls] Removing call with ID ${call.callLog.callId} from calls list")
 
         val calls = arrayListOf<CallData>()
-        calls.addAll(callsData.value.orEmpty())
-
-        val data = calls.find { it.call == call }
-        if (data == null) {
-            Log.w("[Calls] Data for call to remove wasn't found")
-        } else {
-            data.destroy()
-            calls.remove(data)
+        for (data in callsData.value.orEmpty()) {
+            if (data.call == call) {
+                data.destroy()
+            } else {
+                calls.add(data)
+            }
         }
 
         callsData.value = calls
@@ -254,14 +248,25 @@ class CallsViewModel : ViewModel() {
     private fun updateCurrentCallData(currentCall: Call?) {
         var callToUse = currentCall
         if (currentCall == null) {
-            if (coreContext.core.callsNb == 1) return // There is only one call, most likely it is paused
+            if (coreContext.core.callsNb == 1) {
+                // Make sure the current call data is matching the only call
+                val firstData = callsData.value?.firstOrNull()
+                if (firstData != null && currentCallData.value != firstData) {
+                    Log.i(
+                        "[Calls] Only one call in Core and the current call data doesn't match it, updating it"
+                    )
+                    currentCallData.value = firstData!!
+                }
+                return
+            }
 
-            Log.w("[Calls] Current call is now null")
             val firstCall = coreContext.core.calls.find { call ->
                 call.state != Call.State.Error && call.state != Call.State.End && call.state != Call.State.Released
             }
             if (firstCall != null && currentCallData.value?.call != firstCall) {
-                Log.i("[Calls] Using [${firstCall.remoteAddress.asStringUriOnly()}] call as \"current\" call")
+                Log.i(
+                    "[Calls] Using [${firstCall.remoteAddress.asStringUriOnly()}] call as \"current\" call"
+                )
                 callToUse = firstCall
             }
         }
@@ -274,14 +279,18 @@ class CallsViewModel : ViewModel() {
         var found = false
         for (callData in callsData.value.orEmpty()) {
             if (callData.call == callToUse) {
-                Log.i("[Calls] Updating current call to: ${callData.call.remoteAddress.asStringUriOnly()}")
+                Log.i(
+                    "[Calls] Updating current call to: ${callData.call.remoteAddress.asStringUriOnly()}"
+                )
                 currentCallData.value = callData
                 found = true
                 break
             }
         }
         if (!found) {
-            Log.w("[Calls] Call with ID [${callToUse.callLog.callId}] not found in calls data list, shouldn't happen!")
+            Log.w(
+                "[Calls] Call with ID [${callToUse.callLog.callId}] not found in calls data list, shouldn't happen!"
+            )
             val viewModel = CallData(callToUse)
             currentCallData.value = viewModel
         }

@@ -29,10 +29,8 @@ import org.linphone.R
 import org.linphone.activities.GenericFragment
 import org.linphone.activities.main.MainActivity
 import org.linphone.activities.main.conference.viewmodels.ConferenceWaitingRoomViewModel
-import org.linphone.compatibility.Compatibility
 import org.linphone.core.tools.Log
 import org.linphone.databinding.ConferenceWaitingRoomFragmentBinding
-import org.linphone.mediastream.Version
 import org.linphone.utils.PermissionHelper
 
 class ConferenceWaitingRoomFragment : GenericFragment<ConferenceWaitingRoomFragmentBinding>() {
@@ -53,6 +51,9 @@ class ConferenceWaitingRoomFragment : GenericFragment<ConferenceWaitingRoomFragm
         val conferenceSubject = arguments?.getString("Subject")
         viewModel.subject.value = conferenceSubject
 
+        val address = arguments?.getString("Address")
+        viewModel.findConferenceInfoByAddress(address)
+
         viewModel.cancelConferenceJoiningEvent.observe(
             viewLifecycleOwner
         ) {
@@ -63,10 +64,14 @@ class ConferenceWaitingRoomFragment : GenericFragment<ConferenceWaitingRoomFragm
                         call.remoteAddress.asStringUriOnly() == conferenceUri
                     }
                     if (callToCancel != null) {
-                        Log.i("[Conference Waiting Room] Call to conference server with URI [$conferenceUri] was started, terminate it")
+                        Log.i(
+                            "[Conference Waiting Room] Call to conference server with URI [$conferenceUri] was started, terminate it"
+                        )
                         callToCancel.terminate()
                     } else {
-                        Log.w("[Conference Waiting Room] Call to conference server with URI [$conferenceUri] wasn't found!")
+                        Log.w(
+                            "[Conference Waiting Room] Call to conference server with URI [$conferenceUri] wasn't found!"
+                        )
                     }
                 }
                 goBack()
@@ -81,13 +86,19 @@ class ConferenceWaitingRoomFragment : GenericFragment<ConferenceWaitingRoomFragm
                 if (conferenceUri != null) {
                     val conferenceAddress = coreContext.core.interpretUrl(conferenceUri, false)
                     if (conferenceAddress != null) {
-                        Log.i("[Conference Waiting Room] Calling conference SIP URI: ${conferenceAddress.asStringUriOnly()}")
+                        Log.i(
+                            "[Conference Waiting Room] Calling conference SIP URI: ${conferenceAddress.asStringUriOnly()}"
+                        )
                         coreContext.startCall(conferenceAddress, callParams)
                     } else {
-                        Log.e("[Conference Waiting Room] Failed to parse conference SIP URI: $conferenceUri")
+                        Log.e(
+                            "[Conference Waiting Room] Failed to parse conference SIP URI: $conferenceUri"
+                        )
                     }
                 } else {
-                    Log.e("[Conference Waiting Room] Failed to find conference SIP URI in arguments")
+                    Log.e(
+                        "[Conference Waiting Room] Failed to find conference SIP URI in arguments"
+                    )
                 }
             }
         }
@@ -132,10 +143,16 @@ class ConferenceWaitingRoomFragment : GenericFragment<ConferenceWaitingRoomFragm
         super.onResume()
 
         coreContext.core.nativePreviewWindowId = binding.localPreviewVideoSurface
-        coreContext.core.isVideoPreviewEnabled = viewModel.isVideoEnabled.value == true
+        val enablePreview = viewModel.isVideoEnabled.value == true
+        if (enablePreview) {
+            Log.i("[Conference Waiting Room] Fragment is being resumed, enabling video preview")
+        }
+        coreContext.core.isVideoPreviewEnabled = enablePreview
     }
 
     override fun onPause() {
+        Log.i("[Conference Waiting Room] Fragment is being paused, disabling video preview")
+        coreContext.core.isVideoPreviewEnabled = false
         coreContext.core.nativePreviewWindowId = null
 
         super.onPause()
@@ -152,11 +169,6 @@ class ConferenceWaitingRoomFragment : GenericFragment<ConferenceWaitingRoomFragm
         if (!PermissionHelper.get().hasCameraPermission()) {
             Log.i("[Conference Waiting Room] Asking for CAMERA permission")
             permissionsRequiredList.add(Manifest.permission.CAMERA)
-        }
-
-        if (Version.sdkAboveOrEqual(Version.API31_ANDROID_12) && !PermissionHelper.get().hasBluetoothConnectPermission()) {
-            Log.i("[Conference Waiting Room] Asking for BLUETOOTH_CONNECT permission")
-            permissionsRequiredList.add(Compatibility.BLUETOOTH_CONNECT)
         }
 
         if (permissionsRequiredList.isNotEmpty()) {
@@ -183,9 +195,6 @@ class ConferenceWaitingRoomFragment : GenericFragment<ConferenceWaitingRoomFragm
                         Log.i("[Conference Waiting Room] CAMERA permission has been granted")
                         coreContext.core.reloadVideoDevices()
                         viewModel.enableVideo()
-                    }
-                    Compatibility.BLUETOOTH_CONNECT -> if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
-                        Log.i("[Conference Waiting Room] BLUETOOTH_CONNECT permission has been granted")
                     }
                 }
             }

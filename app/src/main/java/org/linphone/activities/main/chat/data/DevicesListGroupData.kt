@@ -23,25 +23,25 @@ import androidx.lifecycle.MutableLiveData
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
 import org.linphone.contact.GenericContactData
-import org.linphone.core.ChatRoomSecurityLevel
+import org.linphone.core.ChatRoom
 import org.linphone.core.Participant
 import org.linphone.utils.LinphoneUtils
 
-class DevicesListGroupData(private val participant: Participant) : GenericContactData(participant.address) {
-    private val device = if (participant.devices.isEmpty()) null else participant.devices.first()
-
+class DevicesListGroupData(private val participant: Participant) : GenericContactData(
+    participant.address
+) {
     val securityLevelIcon: Int by lazy {
-        when (device?.securityLevel) {
-            ChatRoomSecurityLevel.Safe -> R.drawable.security_2_indicator
-            ChatRoomSecurityLevel.Encrypted -> R.drawable.security_1_indicator
+        when (participant.securityLevel) {
+            ChatRoom.SecurityLevel.Safe -> R.drawable.security_2_indicator
+            ChatRoom.SecurityLevel.Encrypted -> R.drawable.security_1_indicator
             else -> R.drawable.security_alert_indicator
         }
     }
 
     val securityLevelContentDescription: Int by lazy {
-        when (device?.securityLevel) {
-            ChatRoomSecurityLevel.Safe -> R.string.content_description_security_level_safe
-            ChatRoomSecurityLevel.Encrypted -> R.string.content_description_security_level_encrypted
+        when (participant.securityLevel) {
+            ChatRoom.SecurityLevel.Safe -> R.string.content_description_security_level_safe
+            ChatRoom.SecurityLevel.Encrypted -> R.string.content_description_security_level_encrypted
             else -> R.string.content_description_security_level_unsafe
         }
     }
@@ -68,6 +68,11 @@ class DevicesListGroupData(private val participant: Participant) : GenericContac
     }
 
     fun onClick() {
-        if (device?.address != null) coreContext.startCall(device.address, forceZRTP = true)
+        val device = if (participant.devices.isEmpty()) null else participant.devices.first()
+        if (device?.address != null) {
+            coreContext.startCall(device.address, forceZRTP = true)
+        } else {
+            coreContext.startCall(participant.address, forceZRTP = true)
+        }
     }
 }

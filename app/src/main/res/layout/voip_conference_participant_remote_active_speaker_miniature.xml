@@ -16,6 +16,7 @@
         android:layout_height="@dimen/voip_active_speaker_miniature_size"
         android:layout_margin="5dp"
         android:background="@{!data.isInConference &amp;&amp; !data.isJoining ? @drawable/shape_remote_paused_background : @drawable/shape_remote_background, default=@drawable/shape_remote_background}"
+        android:visibility="@{data.isActiveSpeaker ? View.GONE : View.VISIBLE}"
         app:layout_alignSelf="flex_end"
         app:layout_flexShrink="0">
 
@@ -23,13 +24,15 @@
             android:id="@+id/participant_avatar"
             android:layout_width="@dimen/voip_conference_active_speaker_miniature_avatar_size"
             android:layout_height="@dimen/voip_conference_active_speaker_miniature_avatar_size"
+            android:background="@drawable/generated_avatar_bg"
             android:visibility="@{data.isInConference || data.isJoining ? View.VISIBLE : View.GONE}"
             android:contentDescription="@null"
             coilVoipContact="@{data}"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintDimensionRatio="1:1" />
 
         <org.linphone.activities.voip.views.RoundCornersTextureView
             android:id="@+id/participant_video_surface"
@@ -94,7 +97,7 @@
         <ImageView
             android:layout_width="@dimen/voip_conference_participant_mic_muted_icon_size_active_speaker"
             android:layout_height="@dimen/voip_conference_participant_mic_muted_icon_size_active_speaker"
-            android:layout_margin="5dp"
+            android:layout_margin="@dimen/mute_mic_miniature_margin"
             android:background="@drawable/shape_toggle_pressed_background"
             android:contentDescription="@string/content_description_conference_participant_mic_muted"
             android:padding="2dp"

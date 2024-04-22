@@ -23,6 +23,7 @@ import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.ViewModelProvider
 import org.linphone.LinphoneApplication.Companion.coreContext
+import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.activities.GenericFragment
 import org.linphone.activities.assistant.AssistantActivity
@@ -45,7 +46,10 @@ class EmailAccountValidationFragment : GenericFragment<AssistantEmailAccountVali
             ViewModelProvider(this)[SharedAssistantViewModel::class.java]
         }
 
-        viewModel = ViewModelProvider(this, EmailAccountValidationViewModelFactory(sharedAssistantViewModel.getAccountCreator()))[EmailAccountValidationViewModel::class.java]
+        viewModel = ViewModelProvider(
+            this,
+            EmailAccountValidationViewModelFactory(sharedAssistantViewModel.getAccountCreator())
+        )[EmailAccountValidationViewModel::class.java]
         binding.viewModel = viewModel
 
         viewModel.leaveAssistantEvent.observe(
@@ -54,11 +58,15 @@ class EmailAccountValidationFragment : GenericFragment<AssistantEmailAccountVali
             it.consume {
                 coreContext.newAccountConfigured(true)
 
-                val args = Bundle()
-                args.putBoolean("AllowSkip", true)
-                args.putString("Username", viewModel.accountCreator.username)
-                args.putString("Password", viewModel.accountCreator.password)
-                navigateToAccountLinking(args)
+                if (!corePreferences.hideLinkPhoneNumber) {
+                    val args = Bundle()
+                    args.putBoolean("AllowSkip", true)
+                    args.putString("Username", viewModel.accountCreator.username)
+                    args.putString("Password", viewModel.accountCreator.password)
+                    navigateToAccountLinking(args)
+                } else {
+                    requireActivity().finish()
+                }
             }
         }
 

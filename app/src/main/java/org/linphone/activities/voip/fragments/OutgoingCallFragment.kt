@@ -24,7 +24,6 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.Chronometer
 import androidx.navigation.navGraphViewModels
-import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.R
 import org.linphone.activities.navigateToActiveCall
 import org.linphone.activities.voip.viewmodels.CallsViewModel
@@ -45,8 +44,6 @@ class OutgoingCallFragment : GenericVideoPreviewFragment<VoipCallOutgoingFragmen
         binding.controlsViewModel = controlsViewModel
 
         binding.callsViewModel = callsViewModel
-
-        setupLocalViewPreview(binding.localPreviewVideoSurface, binding.switchCamera)
 
         callsViewModel.callConnectedEvent.observe(
             viewLifecycleOwner
@@ -79,8 +76,25 @@ class OutgoingCallFragment : GenericVideoPreviewFragment<VoipCallOutgoingFragmen
             viewLifecycleOwner
         ) {
             if (it) {
-                coreContext.core.nativePreviewWindowId = binding.localPreviewVideoSurface
+                setupLocalVideoPreview(binding.localPreviewVideoSurface, binding.switchCamera)
             }
         }
+    }
+
+    // We don't want the proximity sensor to turn screen OFF in this fragment
+    override fun onResume() {
+        super.onResume()
+
+        controlsViewModel.forceDisableProximitySensor.value = true
+        if (controlsViewModel.isOutgoingEarlyMedia.value == true) {
+            setupLocalVideoPreview(binding.localPreviewVideoSurface, binding.switchCamera)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+
+        controlsViewModel.forceDisableProximitySensor.value = false
+        cleanUpLocalVideoPreview(binding.localPreviewVideoSurface)
     }
 }

@@ -48,6 +48,7 @@ import org.linphone.activities.main.settings.fragments.*
 import org.linphone.activities.main.sidemenu.fragments.SideMenuFragment
 import org.linphone.activities.voip.CallActivity
 import org.linphone.activities.voip.fragments.*
+import org.linphone.core.tools.Log
 
 internal fun Fragment.findMasterNavController(): NavController {
     return parentFragment?.parentFragment?.findNavController() ?: findNavController()
@@ -65,7 +66,7 @@ fun popupTo(
 
 /* Main activity related */
 
-internal fun MainActivity.navigateToDialer(args: Bundle?) {
+internal fun MainActivity.navigateToDialer(args: Bundle? = null) {
     findNavController(R.id.nav_host_fragment).navigate(
         R.id.action_global_dialerFragment,
         args,
@@ -86,6 +87,14 @@ internal fun MainActivity.navigateToChatRoom(localAddress: String?, peerAddress:
     findNavController(R.id.nav_host_fragment).navigate(
         Uri.parse(deepLink),
         popupTo(R.id.masterChatRoomsFragment, true)
+    )
+}
+
+internal fun MainActivity.navigateToContacts() {
+    findNavController(R.id.nav_host_fragment).navigate(
+        R.id.action_global_masterContactsFragment,
+        null,
+        popupTo(R.id.masterContactsFragment, true)
     )
 }
 
@@ -158,6 +167,11 @@ internal fun TabsFragment.navigateToChatRooms() {
 /* Dialer related */
 
 internal fun DialerFragment.navigateToContacts(uriToAdd: String?) {
+    if (uriToAdd.isNullOrEmpty()) {
+        Log.e("[Navigation] SIP URI to add to contact is null or empty!")
+        return
+    }
+
     val deepLink = "linphone-android://contact/new/$uriToAdd"
     findNavController().navigate(
         Uri.parse(deepLink),
@@ -299,12 +313,22 @@ internal fun MasterChatRoomsFragment.clearDisplayedChatRoom() {
 }
 
 internal fun DetailChatRoomFragment.navigateToContacts(sipUriToAdd: String) {
+    if (sipUriToAdd.isEmpty()) {
+        Log.e("[Navigation] SIP URI to add to contact is empty!")
+        return
+    }
+
     val deepLink = "linphone-android://contact/new/$sipUriToAdd"
     findMasterNavController().navigate(Uri.parse(deepLink))
 }
 
-internal fun DetailChatRoomFragment.navigateToContact(id: String) {
+internal fun DetailChatRoomFragment.navigateToNativeContact(id: String) {
     val deepLink = "linphone-android://contact/view/$id"
+    findMasterNavController().navigate(Uri.parse(deepLink))
+}
+
+internal fun DetailChatRoomFragment.navigateToFriend(address: String) {
+    val deepLink = "linphone-android://contact/view-friend/$address"
     findMasterNavController().navigate(Uri.parse(deepLink))
 }
 
@@ -506,13 +530,15 @@ internal fun MasterContactsFragment.clearDisplayedContact() {
 }
 
 internal fun ContactEditorFragment.navigateToContact(id: String) {
-    val bundle = Bundle()
-    bundle.putString("id", id)
-    findNavController().navigate(
-        R.id.action_contactEditorFragment_to_detailContactFragment,
-        bundle,
-        popupTo(R.id.contactEditorFragment, true)
-    )
+    if (findNavController().currentDestination?.id == R.id.contactEditorFragment) {
+        val bundle = Bundle()
+        bundle.putString("id", id)
+        findNavController().navigate(
+            R.id.action_contactEditorFragment_to_detailContactFragment,
+            bundle,
+            popupTo(R.id.contactEditorFragment, true)
+        )
+    }
 }
 
 internal fun DetailContactFragment.navigateToChatRoom(args: Bundle?) {
@@ -604,12 +630,22 @@ internal fun MasterCallLogsFragment.navigateToConferenceWaitingRoom(
 }
 
 internal fun DetailCallLogFragment.navigateToContacts(sipUriToAdd: String) {
+    if (sipUriToAdd.isEmpty()) {
+        Log.e("[Navigation] SIP URI to add to contact is empty!")
+        return
+    }
+
     val deepLink = "linphone-android://contact/new/$sipUriToAdd"
     findMasterNavController().navigate(Uri.parse(deepLink))
 }
 
-internal fun DetailCallLogFragment.navigateToContact(id: String) {
+internal fun DetailCallLogFragment.navigateToNativeContact(id: String) {
     val deepLink = "linphone-android://contact/view/$id"
+    findMasterNavController().navigate(Uri.parse(deepLink))
+}
+
+internal fun DetailCallLogFragment.navigateToFriend(address: String) {
+    val deepLink = "linphone-android://contact/view-friend/$address"
     findMasterNavController().navigate(Uri.parse(deepLink))
 }
 
@@ -808,7 +844,11 @@ internal fun ContactsSettingsFragment.navigateToLdapSettings(configIndex: Int) {
 
 internal fun SideMenuFragment.navigateToAccountSettings(identity: String) {
     val deepLink = "linphone-android://settings/$identity"
-    findNavController().navigate(Uri.parse(deepLink))
+    try {
+        findNavController().navigate(Uri.parse(deepLink))
+    } catch (iae: IllegalArgumentException) {
+        Log.e("[Navigation] Failed to navigate to deeplink [$deepLink]")
+    }
 }
 
 internal fun SideMenuFragment.navigateToSettings() {
@@ -929,6 +969,26 @@ internal fun SingleCallFragment.navigateToConferenceLayout() {
     }
 }
 
+internal fun SingleCallFragment.navigateToIncomingCall() {
+    if (findNavController().currentDestination?.id == R.id.singleCallFragment) {
+        findNavController().navigate(
+            R.id.action_global_incomingCallFragment,
+            null,
+            popupTo(R.id.singleCallFragment, true)
+        )
+    }
+}
+
+internal fun SingleCallFragment.navigateToOutgoingCall() {
+    if (findNavController().currentDestination?.id == R.id.singleCallFragment) {
+        findNavController().navigate(
+            R.id.action_global_outgoingCallFragment,
+            null,
+            popupTo(R.id.singleCallFragment, true)
+        )
+    }
+}
+
 internal fun ConferenceCallFragment.navigateToCallsList() {
     if (findNavController().currentDestination?.id == R.id.conferenceCallFragment) {
         findNavController().navigate(
@@ -995,6 +1055,16 @@ internal fun WelcomeFragment.navigateToPhoneAccountCreation() {
     if (findNavController().currentDestination?.id == R.id.welcomeFragment) {
         findNavController().navigate(
             R.id.action_welcomeFragment_to_phoneAccountCreationFragment,
+            null,
+            popupTo()
+        )
+    }
+}
+
+internal fun WelcomeFragment.navigateToNoPushWarning() {
+    if (findNavController().currentDestination?.id == R.id.welcomeFragment) {
+        findNavController().navigate(
+            R.id.action_welcomeFragment_to_noPushWarningFragment,
             null,
             popupTo()
         )

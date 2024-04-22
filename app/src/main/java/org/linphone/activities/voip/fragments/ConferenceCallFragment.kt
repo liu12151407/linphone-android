@@ -81,6 +81,17 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
 
         binding.statsViewModel = statsViewModel
 
+        conferenceViewModel.reloadConferenceFragmentEvent.observe(
+            viewLifecycleOwner
+        ) {
+            it.consume {
+                Log.i(
+                    "[Conference Call] Reloading fragment after toggling video ON while in AUDIO_ONLY layout"
+                )
+                refreshConferenceFragment()
+            }
+        }
+
         conferenceViewModel.conferenceDisplayMode.observe(
             viewLifecycleOwner
         ) { displayMode ->
@@ -88,17 +99,35 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
 
             if (displayMode == ConferenceDisplayMode.ACTIVE_SPEAKER) {
                 if (conferenceViewModel.conferenceExists.value == true) {
-                    Log.i("[Conference Call] Local participant is in conference and current layout is active speaker, updating Core's native window id")
-                    val window = binding.root.findViewById<RoundCornersTextureView>(R.id.conference_active_speaker_remote_video)
+                    Log.i(
+                        "[Conference Call] Local participant is in conference and current layout is active speaker, updating Core's native window id"
+                    )
+                    val window = binding.root.findViewById<RoundCornersTextureView>(
+                        R.id.conference_active_speaker_remote_video
+                    )
                     coreContext.core.nativeVideoWindowId = window
 
-                    val preview = binding.root.findViewById<RoundCornersTextureView>(R.id.local_preview_video_surface)
+                    val preview = binding.root.findViewById<RoundCornersTextureView>(
+                        R.id.local_preview_video_surface
+                    )
                     if (preview != null) {
                         conferenceViewModel.meParticipant.value?.setTextureView(preview)
                     }
                 } else {
-                    Log.i("[Conference Call] Either not in conference or current layout isn't active speaker, updating Core's native window id")
+                    Log.i(
+                        "[Conference Call] Either not in conference or current layout isn't active speaker, updating Core's native window id"
+                    )
                     coreContext.core.nativeVideoWindowId = null
+                }
+            }
+
+            when (displayMode) {
+                ConferenceDisplayMode.AUDIO_ONLY -> {
+                    controlsViewModel.fullScreenMode.value = false
+                }
+                else -> {
+                    val conference = conferenceViewModel.conference.value
+                    if (conference != null) switchToFullScreenIfPossible(conference)
                 }
             }
         }
@@ -110,11 +139,17 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
                 conferenceViewModel.conferenceDisplayMode.value == ConferenceDisplayMode.GRID &&
                 it.size > conferenceViewModel.maxParticipantsForMosaicLayout
             ) {
-                Log.w("[Conference Call] More than ${conferenceViewModel.maxParticipantsForMosaicLayout} participants (${it.size}), forcing active speaker layout")
-                conferenceViewModel.changeLayout(ConferenceDisplayMode.ACTIVE_SPEAKER)
+                Log.w(
+                    "[Conference Call] More than ${conferenceViewModel.maxParticipantsForMosaicLayout} participants (${it.size}), forcing active speaker layout"
+                )
+                conferenceViewModel.changeLayout(ConferenceDisplayMode.ACTIVE_SPEAKER, false)
                 refreshConferenceFragment()
                 // Can't use SnackBar whilst changing fragment
-                Toast.makeText(requireContext(), R.string.conference_too_many_participants_for_mosaic_layout, Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    requireContext(),
+                    R.string.conference_too_many_participants_for_mosaic_layout,
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
 
@@ -149,26 +184,16 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
             }
         }
 
-        conferenceViewModel.conferenceDisplayMode.observe(
-            viewLifecycleOwner
-        ) { layout ->
-            when (layout) {
-                ConferenceDisplayMode.AUDIO_ONLY -> {
-                    controlsViewModel.fullScreenMode.value = false
-                }
-                else -> {
-                    val conference = conferenceViewModel.conference.value
-                    if (conference != null) switchToFullScreenIfPossible(conference)
-                }
-            }
-        }
-
         conferenceViewModel.firstToJoinEvent.observe(
             viewLifecycleOwner
         ) {
             it.consume {
                 Snackbar
-                    .make(binding.coordinator, R.string.conference_first_to_join, Snackbar.LENGTH_LONG)
+                    .make(
+                        binding.coordinator,
+                        R.string.conference_first_to_join,
+                        Snackbar.LENGTH_LONG
+                    )
                     .setAnchorView(binding.primaryButtons.hangup)
                     .show()
             }
@@ -231,7 +256,9 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
             it.consume { call ->
                 val conference = call.conference
                 if (conference != null && conferenceViewModel.conference.value == null) {
-                    Log.i("[Conference Call] Found conference attached to call and no conference in dedicated view model, init & configure it")
+                    Log.i(
+                        "[Conference Call] Found conference attached to call and no conference in dedicated view model, init & configure it"
+                    )
                     conferenceViewModel.initConference(conference)
                     conferenceViewModel.configureConference(conference)
                 }
@@ -244,7 +271,11 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
             it.consume { isCallTransfer ->
                 val intent = Intent()
                 intent.setClass(requireContext(), MainActivity::class.java)
-                intent.putExtra("Dialer", true)
+                if (corePreferences.skipDialerForNewCallAndTransfer) {
+                    intent.putExtra("Contacts", true)
+                } else {
+                    intent.putExtra("Dialer", true)
+                }
                 intent.putExtra("Transfer", isCallTransfer)
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(intent)
@@ -262,23 +293,36 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
         super.onResume()
 
         if (conferenceViewModel.conferenceDisplayMode.value == ConferenceDisplayMode.ACTIVE_SPEAKER) {
+            Log.i(
+                "[Conference Call] Conference fragment is resuming, current display mode is active speaker, adjusting layout"
+            )
             adjustActiveSpeakerLayout()
         }
     }
 
     private fun switchToFullScreenIfPossible(conference: Conference) {
         if (corePreferences.enableFullScreenWhenJoiningVideoConference) {
-            if (conference.currentParams.isVideoEnabled && conferenceViewModel.conferenceCreationPending.value == false) {
+            if (conference.currentParams.isVideoEnabled) {
                 when {
                     conference.me.devices.isEmpty() -> {
-                        Log.w("[Conference Call] Conference has video enabled but either our device hasn't joined yet")
+                        Log.i(
+                            "[Conference Call] Conference has video enabled but our device hasn't joined yet"
+                        )
                     }
-                    conference.me.devices.find { it.getStreamAvailability(StreamType.Video) } != null -> {
-                        Log.i("[Conference Call] Conference has video enabled & our device has video enabled, enabling full screen mode")
+                    conference.me.devices.find {
+                        it.isInConference && it.getStreamAvailability(
+                            StreamType.Video
+                        )
+                    } != null -> {
+                        Log.i(
+                            "[Conference Call] Conference has video enabled & our device has video enabled, enabling full screen mode"
+                        )
                         controlsViewModel.fullScreenMode.value = true
                     }
                     else -> {
-                        Log.w("[Conference Call] Conference has video enabled but our device video is disabled")
+                        Log.i(
+                            "[Conference Call] Conference has video enabled but our device video is disabled"
+                        )
                     }
                 }
             }
@@ -313,7 +357,9 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
 
     private fun updateHingeRelatedConstraints(feature: FoldingFeature) {
         Log.i("[Conference Call] Updating constraint layout hinges: $feature")
-        val constraintLayout = binding.root.findViewById<ConstraintLayout>(R.id.conference_constraint_layout)
+        val constraintLayout = binding.root.findViewById<ConstraintLayout>(
+            R.id.conference_constraint_layout
+        )
             ?: return
         val set = ConstraintSet()
         set.clone(constraintLayout)
@@ -346,14 +392,20 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
     }
 
     private fun adjustActiveSpeakerLayout() {
-        if (conferenceViewModel.conferenceCreationPending.value == false) {
+        if (conferenceViewModel.conference.value?.state == Conference.State.Created) {
             val participantsCount = conferenceViewModel.conferenceParticipantDevices.value.orEmpty().size
-            Log.i("[Conference Call] Updating active speaker layout for [$participantsCount] participants")
+            Log.i(
+                "[Conference Call] Updating active speaker layout for [$participantsCount] participants"
+            )
             when (participantsCount) {
                 1 -> switchToActiveSpeakerLayoutWhenAlone()
                 2 -> switchToActiveSpeakerLayoutForTwoParticipants()
                 else -> switchToActiveSpeakerLayoutForMoreThanTwoParticipants()
             }
+        } else {
+            Log.w(
+                "[Conference] Active speaker layout not adjusted, conference state is: ${conferenceViewModel.conference.value?.state}"
+            )
         }
     }
 
@@ -431,7 +483,9 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
         set.constrainWidth(R.id.local_participant_background, size)
         set.constrainHeight(R.id.local_participant_background, size)
 
-        val avatarSize = resources.getDimension(R.dimen.voip_conference_active_speaker_miniature_avatar_size).toInt()
+        val avatarSize = resources.getDimension(
+            R.dimen.voip_conference_active_speaker_miniature_avatar_size
+        ).toInt()
         set.constrainWidth(R.id.local_participant_avatar, avatarSize)
         set.constrainHeight(R.id.local_participant_avatar, avatarSize)
 
@@ -472,7 +526,9 @@ class ConferenceCallFragment : GenericFragment<VoipConferenceCallFragmentBinding
         set.constrainWidth(R.id.local_participant_background, size)
         set.constrainHeight(R.id.local_participant_background, size)
 
-        val avatarSize = resources.getDimension(R.dimen.voip_conference_active_speaker_miniature_avatar_size).toInt()
+        val avatarSize = resources.getDimension(
+            R.dimen.voip_conference_active_speaker_miniature_avatar_size
+        ).toInt()
         set.constrainWidth(R.id.local_participant_avatar, avatarSize)
         set.constrainHeight(R.id.local_participant_avatar, avatarSize)
 

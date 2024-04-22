@@ -12,6 +12,7 @@
         <item name="android:colorPrimary">@color/primary_color</item>
         <!-- Comment out the following line to disable system's status bar coloring -->
         <item name="android:colorPrimaryDark">@color/primary_dark_color</item>
+        <item name="android:navigationBarColor">@color/voip_dark_color</item>
 
         <item name="android:textColorPrimary">@color/dark_primary_text_color</item>
         <item name="android:textColorSecondary">@color/header_background_color</item>
@@ -34,6 +35,7 @@
         <item name="dividerColor">@color/voip_light_gray</item>
 
         <item name="drawableTintColor">@color/white_color</item>
+        <item name="drawableBackgroundColor">@color/dark_grey_color</item>
         <item name="drawableTintDisabledColor">@color/voip_light_gray</item>
         <item name="drawableTintOverColor">@color/primary_color</item>
         <item name="drawableTintColor2">@color/voip_dark_gray</item>

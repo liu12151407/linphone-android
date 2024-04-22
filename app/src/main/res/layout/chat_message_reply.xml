@@ -16,6 +16,7 @@
     </data>
 
     <RelativeLayout
+        android:id="@+id/chat_message_reply"
         android:background="@{data.chatMessage.isOutgoing ? @color/chat_bubble_outgoing_color : @color/chat_bubble_incoming_color, default=@color/chat_bubble_incoming_color}"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -59,6 +60,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="5dp"
+                android:maxLines="5"
+                android:ellipsize="end"
                 style="@style/chat_message_reply_font"
                 android:text="@{data.text, default=`Lorem Ipsum`}"/>
 

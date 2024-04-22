@@ -31,7 +31,6 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.transition.MaterialSharedAxis
@@ -39,6 +38,7 @@ import org.linphone.BuildConfig
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
+import org.linphone.activities.GenericActivity
 import org.linphone.activities.main.MainActivity
 import org.linphone.activities.main.dialer.viewmodels.DialerViewModel
 import org.linphone.activities.main.fragments.SecureFragment
@@ -94,13 +94,19 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
         }
 
         binding.setNewContactClickListener {
-            sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(R.id.masterContactsFragment)
-            sharedViewModel.updateContactsAnimationsBasedOnDestination.value = Event(R.id.dialerFragment)
+            sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(
+                R.id.masterContactsFragment
+            )
+            sharedViewModel.updateContactsAnimationsBasedOnDestination.value = Event(
+                R.id.dialerFragment
+            )
             navigateToContacts(viewModel.enteredUri.value)
         }
 
         binding.setNewConferenceClickListener {
-            sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(R.id.conferenceSchedulingFragment)
+            sharedViewModel.updateDialerAnimationsBasedOnDestination.value = Event(
+                R.id.conferenceSchedulingFragment
+            )
             navigateToConferenceScheduling()
         }
 
@@ -152,19 +158,16 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
         viewModel.onMessageToNotifyEvent.observe(
             viewLifecycleOwner
         ) {
-            it.consume { id ->
-                Toast.makeText(requireContext(), id, Toast.LENGTH_SHORT).show()
+            it.consume { resourceId ->
+                (requireActivity() as MainActivity).showSnackBar(resourceId)
             }
         }
 
         if (corePreferences.firstStart) {
-            Log.w("[Dialer] First start detected, wait for assistant to be finished to check for update & request permissions")
+            Log.w(
+                "[Dialer] First start detected, wait for assistant to be finished to check for update & request permissions"
+            )
             return
-        }
-
-        if (arguments?.containsKey("Transfer") == true) {
-            sharedViewModel.pendingCallTransfer = arguments?.getBoolean("Transfer") ?: false
-            Log.i("[Dialer] Is pending call transfer: ${sharedViewModel.pendingCallTransfer}")
         }
 
         if (arguments?.containsKey("URI") == true) {
@@ -172,8 +175,20 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
             Log.i("[Dialer] Found URI to call: $address")
             val skipAutoCall = arguments?.getBoolean("SkipAutoCallStart") ?: false
 
-            if (corePreferences.callRightAway && !skipAutoCall) {
-                Log.i("[Dialer] Call right away setting is enabled, start the call to $address")
+            if (corePreferences.skipDialerForNewCallAndTransfer) {
+                if (sharedViewModel.pendingCallTransfer) {
+                    Log.i(
+                        "[Dialer] We were asked to skip dialer so starting new call to [$address] now"
+                    )
+                    viewModel.transferCallTo(address)
+                } else {
+                    Log.i(
+                        "[Dialer] We were asked to skip dialer so starting transfer to [$address] now"
+                    )
+                    viewModel.directCall(address)
+                }
+            } else if (corePreferences.callRightAway && !skipAutoCall) {
+                Log.i("[Dialer] Call right away setting is enabled, start the call to [$address]")
                 viewModel.directCall(address)
             } else {
                 sharedViewModel.dialerUri = address
@@ -183,6 +198,8 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
 
         Log.i("[Dialer] Pending call transfer mode = ${sharedViewModel.pendingCallTransfer}")
         viewModel.transferVisibility.value = sharedViewModel.pendingCallTransfer
+
+        viewModel.autoInitiateVideoCalls.value = coreContext.core.videoActivationPolicy.automaticallyInitiate
 
         checkForUpdate()
 
@@ -197,7 +214,7 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
     override fun onResume() {
         super.onResume()
 
-        if (resources.getBoolean(R.bool.isTablet)) {
+        if ((requireActivity() as GenericActivity).isTablet()) {
             coreContext.core.nativePreviewWindowId = binding.videoPreviewWindow
         }
 
@@ -256,6 +273,24 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
             // Don't check the following the previous permissions are being asked
             checkTelecomManagerPermissions()
         }
+
+        // See https://developer.android.com/about/versions/14/behavior-changes-14#fgs-types
+        if (Version.sdkAboveOrEqual(Version.API34_ANDROID_14_UPSIDE_DOWN_CAKE)) {
+            val fullScreenIntentPermission = Compatibility.hasFullScreenIntentPermission(
+                requireContext()
+            )
+            Log.i(
+                "[Dialer] Android 14 or above detected: full-screen intent permission is ${if (fullScreenIntentPermission) "granted" else "not granted"}"
+            )
+            if (!fullScreenIntentPermission) {
+                (requireActivity() as MainActivity).showSnackBar(
+                    R.string.android_14_full_screen_intent_permission_not_granted,
+                    R.string.android_14_go_to_full_screen_intent_permission_setting
+                ) {
+                    Compatibility.requestFullScreenIntentPermission(requireContext())
+                }
+            }
+        }
     }
 
     @TargetApi(Version.API26_O_80)
@@ -282,10 +317,12 @@ class DialerFragment : SecureFragment<DialerFragmentBinding>() {
         Log.i("[Dialer] Telecom Manager permissions granted")
         if (!TelecomHelper.exists()) {
             Log.i("[Dialer] Creating Telecom Helper")
-            if (requireContext().packageManager.hasSystemFeature(PackageManager.FEATURE_CONNECTION_SERVICE)) {
+            if (Compatibility.hasTelecomManagerFeature(requireContext())) {
                 TelecomHelper.create(requireContext())
             } else {
-                Log.e("[Dialer] Telecom Helper can't be created, device doesn't support connection service!")
+                Log.e(
+                    "[Dialer] Telecom Helper can't be created, device doesn't support connection service!"
+                )
                 return
             }
         } else {

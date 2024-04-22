@@ -26,6 +26,7 @@ import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.provider.ContactsContract
@@ -34,14 +35,15 @@ import androidx.core.app.Person
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.MutableLiveData
 import java.io.IOException
-import kotlinx.coroutines.*
 import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.core.*
 import org.linphone.core.tools.Log
 import org.linphone.utils.ImageUtils
+import org.linphone.utils.LinphoneUtils
 import org.linphone.utils.PermissionHelper
+import org.linphone.utils.TimestampUtils
 
 interface ContactsUpdatedListener {
     fun onContactsUpdated()
@@ -70,6 +72,7 @@ class ContactsManager(private val context: Context) {
 
     val contactAvatar: IconCompat
     val groupAvatar: IconCompat
+    val groupBitmap: Bitmap
 
     private val localFriends = arrayListOf<Friend>()
 
@@ -88,13 +91,34 @@ class ContactsManager(private val context: Context) {
         }
     }
 
+    private val coreListener: CoreListenerStub = object : CoreListenerStub() {
+        override fun onFriendListCreated(core: Core, friendList: FriendList) {
+            friendList.addListener(friendListListener)
+        }
+
+        override fun onFriendListRemoved(core: Core, friendList: FriendList) {
+            friendList.removeListener(friendListListener)
+        }
+    }
+
     init {
         initSyncAccount()
 
-        contactAvatar = IconCompat.createWithResource(context, R.drawable.voip_single_contact_avatar_alt)
-        groupAvatar = IconCompat.createWithResource(context, R.drawable.voip_multiple_contacts_avatar_alt)
+        contactAvatar = IconCompat.createWithResource(
+            context,
+            R.drawable.voip_single_contact_avatar_alt
+        )
+        groupAvatar = IconCompat.createWithResource(
+            context,
+            R.drawable.voip_multiple_contacts_avatar_alt
+        )
+        groupBitmap = BitmapFactory.decodeResource(
+            context.resources,
+            R.drawable.voip_multiple_contacts_avatar_alt
+        )
 
         val core = coreContext.core
+        core.addListener(coreListener)
         for (list in core.friendsLists) {
             list.addListener(friendListListener)
         }
@@ -107,7 +131,7 @@ class ContactsManager(private val context: Context) {
 
     fun fetchFinished() {
         Log.i("[Contacts Manager] Contacts loader have finished")
-        latestContactFetch = System.currentTimeMillis().toString()
+        latestContactFetch = TimestampUtils.timeToString(System.currentTimeMillis(), false)
         updateLocalContacts()
         fetchInProgress.value = false
         notifyListeners()
@@ -120,7 +144,7 @@ class ContactsManager(private val context: Context) {
 
         for (account in coreContext.core.accountList) {
             val friend = coreContext.core.createFriend()
-            friend.name = account.params.identityAddress?.displayName ?: account.params.identityAddress?.username
+            friend.name = LinphoneUtils.getDisplayName(account.params.identityAddress)
 
             val address = account.params.identityAddress ?: continue
             friend.address = address
@@ -132,9 +156,22 @@ class ContactsManager(private val context: Context) {
                 friend.photo = parsedUri
             }
 
-            Log.i("[Contacts Manager] Local contact created for account [${address.asString()}] and picture [${friend.photo}]")
+            Log.i(
+                "[Contacts Manager] Local contact created for account [${address.asString()}] and picture [${friend.photo}]"
+            )
             localFriends.add(friend)
         }
+    }
+
+    @Synchronized
+    fun getMePerson(localAddress: Address): Person {
+        val friend = localFriends.find { localFriend ->
+            localFriend.addresses.find { address ->
+                address.weakEqual(localAddress)
+            } != null
+        }
+        return friend?.getPerson()
+            ?: Person.Builder().setName(LinphoneUtils.getDisplayName(localAddress)).build()
     }
 
     @Synchronized
@@ -180,6 +217,16 @@ class ContactsManager(private val context: Context) {
     }
 
     @Synchronized
+    fun isAddressMyself(address: Address): Boolean {
+        for (friend in localFriends) {
+            if (friend.address?.weakEqual(address) == true) {
+                return true
+            }
+        }
+        return false
+    }
+
+    @Synchronized
     fun addListener(listener: ContactsUpdatedListener) {
         contactsUpdatedListeners.add(listener)
     }
@@ -209,11 +256,14 @@ class ContactsManager(private val context: Context) {
     fun destroy() {
         val core = coreContext.core
         for (list in core.friendsLists) list.removeListener(friendListListener)
+        core.removeListener(coreListener)
     }
 
     private fun initSyncAccount() {
         val accountManager = context.getSystemService(Context.ACCOUNT_SERVICE) as AccountManager
-        val accounts = accountManager.getAccountsByType(context.getString(R.string.sync_account_type))
+        val accounts = accountManager.getAccountsByType(
+            context.getString(R.string.sync_account_type)
+        )
         if (accounts.isEmpty()) {
             val newAccount = Account(
                 context.getString(R.string.sync_account_name),
@@ -229,7 +279,9 @@ class ContactsManager(private val context: Context) {
             }
         } else {
             for (account in accounts) {
-                Log.i("[Contacts Manager] Found account with name [${account.name}] and type [${account.type}]")
+                Log.i(
+                    "[Contacts Manager] Found account with name [${account.name}] and type [${account.type}]"
+                )
             }
         }
     }
@@ -243,14 +295,25 @@ class ContactsManager(private val context: Context) {
 
         for (syncAdapter in syncAdapters) {
             if (syncAdapter.authority == "com.android.contacts" && syncAdapter.isUserVisible) {
-                if (syncAdapter.supportsUploading() || syncAdapter.accountType == context.getString(R.string.sync_account_type)) {
-                    Log.i("[Contacts Manager] Found sync adapter for com.android.contacts authority: ${syncAdapter.accountType}")
+                if (syncAdapter.supportsUploading() || syncAdapter.accountType == context.getString(
+                        R.string.sync_account_type
+                    )
+                ) {
+                    Log.i(
+                        "[Contacts Manager] Found sync adapter for com.android.contacts authority: ${syncAdapter.accountType}"
+                    )
                     val accounts = accountManager.getAccountsByType(syncAdapter.accountType)
                     for (account in accounts) {
-                        Log.i("[Contacts Manager] Found account for account type ${syncAdapter.accountType}: ${account.name}")
+                        Log.i(
+                            "[Contacts Manager] Found account for account type ${syncAdapter.accountType}: ${account.name}"
+                        )
                         for (authenticator in authenticators) {
                             if (authenticator.type == account.type) {
-                                val drawable = packageManager.getDrawable(authenticator.packageName, authenticator.smallIconId, null)
+                                val drawable = packageManager.getDrawable(
+                                    authenticator.packageName,
+                                    authenticator.smallIconId,
+                                    null
+                                )
                                 val triple = Triple(account.name, account.type, drawable)
                                 available.add(triple)
                             }
@@ -265,7 +328,9 @@ class ContactsManager(private val context: Context) {
 
     @Synchronized
     private fun refreshContactOnPresenceReceived(friend: Friend) {
-        Log.d("[Contacts Manager] Received presence information for contact $friend")
+        Log.d(
+            "[Contacts Manager] Received presence information for contact [${friend.name}]: [${friend.consolidatedPresence}]"
+        )
         if (corePreferences.storePresenceInNativeContact && PermissionHelper.get().hasWriteContactsPermission()) {
             if (friend.refKey != null) {
                 Log.i("[Contacts Manager] Storing presence in native contact ${friend.refKey}")
@@ -280,7 +345,9 @@ class ContactsManager(private val context: Context) {
         for (phoneNumber in friend.phoneNumbers) {
             val sipAddress = friend.getContactForPhoneNumberOrAddress(phoneNumber)
             if (sipAddress != null) {
-                Log.d("[Contacts Manager] Found presence information to store in native contact $friend under Linphone sync account")
+                Log.d(
+                    "[Contacts Manager] Found presence information to store in native contact $friend under Linphone sync account"
+                )
                 contactEditor.setPresenceInformation(
                     phoneNumber,
                     sipAddress
@@ -320,7 +387,7 @@ fun Friend.getContactForPhoneNumberOrAddress(value: String): String? {
     return null
 }
 
-fun Friend.hasPresence(): Boolean {
+fun Friend.hasLongTermPresence(): Boolean {
     for (address in addresses) {
         val presenceModel = getPresenceModelForUriOrTel(address.asStringUriOnly())
         if (presenceModel != null && presenceModel.basicStatus == PresenceBasicStatus.Open) return true
@@ -353,10 +420,12 @@ fun Friend.getPictureUri(thumbnailPreferred: Boolean = false): Uri? {
                 // Check that the URI points to a real file
                 val contentResolver = coreContext.context.contentResolver
                 try {
-                    if (contentResolver.openAssetFileDescriptor(pictureUri, "r") != null) {
+                    val fd = contentResolver.openAssetFileDescriptor(pictureUri, "r")
+                    if (fd != null) {
+                        fd.close()
                         return pictureUri
                     }
-                } catch (ioe: IOException) { }
+                } catch (_: IOException) { }
             }
 
             // Fallback to thumbnail if high res picture isn't available
@@ -364,11 +433,11 @@ fun Friend.getPictureUri(thumbnailPreferred: Boolean = false): Uri? {
                 lookupUri,
                 ContactsContract.Contacts.Photo.CONTENT_DIRECTORY
             )
-        } catch (e: Exception) { }
+        } catch (_: Exception) { }
     } else if (photo != null) {
         try {
             return Uri.parse(photo)
-        } catch (e: Exception) { }
+        } catch (_: Exception) { }
     }
     return null
 }
@@ -381,14 +450,15 @@ fun Friend.getPerson(): Person {
             coreContext.context,
             getThumbnailUri()
         )
-    val icon =
+    personBuilder.setIcon(
         if (bm == null) {
             coreContext.contactsManager.contactAvatar
-        } else IconCompat.createWithAdaptiveBitmap(bm)
-    if (icon != null) {
-        personBuilder.setIcon(icon)
-    }
+        } else {
+            IconCompat.createWithAdaptiveBitmap(bm)
+        }
+    )
 
+    personBuilder.setKey(refKey)
     personBuilder.setUri(nativeUri)
     personBuilder.setImportant(starred)
     return personBuilder.build()

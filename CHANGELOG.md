@@ -10,7 +10,245 @@ Group changes to describe their impact on the project, as follows:
     Fixed for any bug fixes.
     Security to invite users to upgrade in case of vulnerabilities.
 
-## [4.7.0] - Unreleased
+## [5.2.3] - 2024-01-31
+
+### Fixed
+- Crash due to OOM for some images sent/received in chat
+- Crash while navigating to account settings
+
+### Changed
+- Updated translations (Romanian, Polish, Portuguese)
+
+## [5.2.2] - 2024-01-15
+
+### Fixed
+- Local conference created my merging audio streams
+
+## [5.2.1] - 2023-12-23
+
+### Fixed
+- Crash when Service starts before CoreContext
+
+## [5.2.0] - 2023-12-21
+
+### Added
+- Chat messages emoji "reactions"
+- Hearing aids should be working the same way bluetooth headset does
+- Hardware video codecs (H264, H265) are now used in priority when possible (SDK)
+- Broadcast mode for scheduled meetings (hidden)
+- Android 14 support
+
+### Changed
+- BLUETOOTH_CONNECT permission is no longer required
+
+### Fixed
+- Correctly switching to either bottom or back microphone depending on wether the earpiece or the speaker is used, 
+and also use the same device for input and output if the one set as output as RECORD capability 
+(fixes echo issue while on speakerphone on some devices such as Samsung's)
+- Connection status & color when in refreshing state
+- Sent content type for files attached to a chat message
+- Toggle mute mic while in conference
+- Calling right after creating a chat room
+
+## [5.1.4] - 2023-10-20
+
+### Fixed
+- Various fixes in the SDK (5.2.110)
+
+### Changed
+- Updated translations from Weblate
+
+## [5.1.3] - 2023-09-23
+
+### Fixed
+- Core not able to open database due to issue in 5.2.107 SDK from last update
+- Incoming call activity and lock screen interaction
+- Selected "meeting" filter icon color
+
+## [5.1.2] - 2023-09-22
+
+### Added
+- Italian translation completed
+
+### Fixed
+- Multiple authentication requested dialogs stacking above each other sometimes
+- Downgraded navigation version to try to prevent some crashes reported on the Play Store
+
+## [5.1.1] - 2023-09-06
+
+### Fixed
+- Fixed issue in SDK randomly generated password when creating account from app
+- Various issues reported on the Play Store
+
+## [5.1.0] - 2023-08-21
+
+### Added
+- Showing short term presence for contacts whom publish it + added setting to disable it (enabled by default for sip.linphone.org accounts)
+- Confirmation dialog before removing account
+- Attended transfer instead of blind transfer if there is more than 1 call
+- Last sent message delivery status (IMDN) icon in chat rooms list
+- Emoji picker in chat room, and increase size of text if it only contains emojis
+- Hidden setting to disable video completely
+- Hidden setting to prevent adding / editing / removing native contacts
+- Hidden setting to protect settings access using account password
+- SIP URI in call can be selected using long press
+- Dialog showing up asking for correct account password in case of failed authentication
+
+### Changed
+- Switched Account Creator backend from XMLRPC to FlexiAPI, it now requires to be able to receive a push notification
+- Email account creation form is now only available if TELEPHONY feature is not available, not related to screen size anymore
+- Replaced voice recordings file name by localized placeholder text, like for video conferences invitations
+- Decline incoming calls with Busy reason if there is at least another active call
+- Open keyboard when replying to a message if no text / file / voice record is pending
+- Removed jetifier as it is not needed
+- Switched from gradle 7.5 to 8.0, requires JDK 17 (instead of 11)
+
+### Fixed
+- Messages not marked as reply in basic chat room if sending more than 1 content
+- Chat message video attachment display when failing to get a preview picture
+
+## [5.0.14] - 2023-06-20
+
+### Changed
+- SDK update only
+
+## [5.0.13] - 2023-06-15
+
+### Changed
+- SDK update only
+
+## [5.0.12] - 2023-05-23
+
+### Fixed
+- Crash if notification manager throws an exception
+- Video preview not moving if call was started in audio only
+
+## [5.0.11] - 2023-05-09
+
+### Fixed
+- Wrong call displayed when hanging up a call while an incoming one is ringing
+- Crash related to call history
+- Crash due to wrongly format string
+- Add/remove missing listener on FriendLists created after Core has been created
+
+### Changed
+- Improved GSM call interruption
+- Updated translations
+
+## [5.0.11] - 2023-05-09
+
+### Fixed
+- Wrong call displayed when hanging up a call while an incoming one is ringing
+- Crash related to call history
+- Crash due to wrongly format string
+- Add/remove missing listener on FriendLists created after Core has been created
+
+### Changed
+- Improved GSM call interruption
+- Updated translations
+
+## [5.0.10] - 2023-04-04
+
+### Fixed
+- Plain copy of encrypted files (when VFS is enabled) not cleaned
+- Avatar display issue if contact's "initials" contains more than 1 emoji or an emoji + a character
+
+## [5.0.9] - 2023-03-30
+
+### Fixed
+- Admin weren't visible for non admin users in group chat rooms
+- Crash when clicking on URI in chat if not matching app is found on Android to handle it
+- LIME update threshold wasn't set, causing a request to be made after each REGISTER
+
+### Changed
+- Now SDK automatically handles TextureView's listener, removed it from app
+- Bumped license year to 2023
+- Force remove LIME X3DH server URL for third party accounts
+
+## [5.0.8] - 2023-03-20
+
+### Fixed
+- Trying to prevent crash in call history
+- Color icon in dark mode in chat for files & replies
+
+### Changed
+- Updated translations
+
+## [5.0.7] - 2023-02-27
+
+### Fixed
+- Fixed navigating to a contact that doesn't have a native ID, but using it's SIP address instead
+- Fixed account creator resolved country name & create button not enabled
+
+### Changed
+- Updated translations
+
+## [5.0.6] - 2023-02-17
+
+### Fixed
+- Wrong country displayed in assistant after picking it in the list if another country has the same international prefix (such as +1)
+- SIP URI clickable pattern missing '~'
+- Crash that happens sometimes when CallActivity is destroyed
+- Pressing send message button while recording a voice message not sending it
+- Missing ephemeral icon next to send message icon
+- Headers colors in IMDN details
+- Pixel issue in call quality indicator 2 icon
+
+### Changed
+- Improved incoming call layout when receiving early-media video
+- Hidden "Echo Tester" setting unless in debug mode as it can mislead user and isn't useful for end user
+
+## [5.0.5] - 2023-01-19
+
+### Fixed
+- Issue with how replies where added to chat message notification from reply action
+
+## [5.0.4] - 2023-01-18
+
+### Added
+- Show a progress bar while importing files to the chat sending area
+
+### Changed
+- Prevent keyboard from auto-replacing some user input such as username, breaking SIP URIs unknowingly
+
+### Fixed
+- Prevent copy of files that weren't sent in chat to be kept in app local folder
+
+## [5.0.3] - 2023-01-13
+
+### Added
+- Voice message recording/playback will use bluetooth/headset/headphones/hearing aid device if available
+- Chat message notifications are now compatible with Android Auto
+
+### Changed
+- In video conference, when in active speaker layout, currently speaking participant miniature will be hidden
+- Attach file, voice recording and send message icons are now a bit bigger
+- Updated Firebase BoM, gradle & some dependencies
+
+### Fixed
+- ANR happening sometimes during voice message playback
+
+## [5.0.2] - 2023-01-05
+
+### Changed
+- Export files to native gallery is now available even if automatically download files setting is enabled
+
+### Fixed
+- Makes sure sip.linphone.org accounts have a LIME X3DH server URL for E2E chat messages encryption
+- Files not being exported to native gallery sometimes
+- Crashes reported by Google Play Store & Crashlytics
+
+## [5.0.1] - 2022-12-16
+
+### Changed
+- File transfer progress indication & error status improvements
+
+### Fixed
+- Wrong LIME status for participant that has multiple devices
+- No longer sends video when switching from audio only to another conference layout
+- SIP URI regex pattern to prevent HTTP URLs containing '@' to be handled as SIP URI
+
+## [5.0.0] - 2022-12-06
 
 ### Added
 - Post Quantum encryption when using ZRTP
@@ -28,6 +266,7 @@ Group changes to describe their impact on the project, as follows:
 
 ### Changed
 - In-call views have been re-designed
+- "Media Encryption Mandatory" setting now allows for any media encryption (instead of only the one selected in the above setting previously)
 - Improved how call logs are handled to improve performances
 - Improved how contact avatars are generated
 - 3-dots menu even for basic chat rooms with more options
@@ -42,10 +281,13 @@ Group changes to describe their impact on the project, as follows:
 - Show service notification sooner to prevent crash if Core creation takes too long
 - Incoming call screen not being showed up to user (& screen staying off) when using app in Samsung secure folder
 - One to one chat room creation process waiting indefinitely if chat room already exists
+- Contact edition (SIP addresses & phone numbers) not working due to original value being lost in Friend parsing
+- Automatically start call recording
 - "Blinking" in some views when presence is being received
 - Trying to keep the preferred driver (OpenSLES / AAudio) when switching device
 - Issues when storing presence in native contacts + potentially duplicated SIP addresses in contact details
 - Chat room scroll position lost when going into sub-view
+- Trim user input to remove any space at end of string due to keyboard auto completion
 - No longer makes requests to our LIME server (end-to-end encryption keys server) for non sip.linphone.org accounts
 - Fixed incoming call/notification not ringing if Do not Disturb mode is enabled except for favorite contacts
 

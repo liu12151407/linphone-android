@@ -23,7 +23,9 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import androidx.annotation.RequiresApi
 import androidx.databinding.DataBindingUtil
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.findNavController
@@ -39,6 +41,7 @@ import org.linphone.activities.voip.viewmodels.ControlsViewModel
 import org.linphone.activities.voip.viewmodels.StatisticsListViewModel
 import org.linphone.compatibility.Compatibility
 import org.linphone.core.Call
+import org.linphone.core.GlobalState
 import org.linphone.core.tools.Log
 import org.linphone.databinding.VoipActivityBinding
 import org.linphone.mediastream.Version
@@ -52,12 +55,14 @@ class CallActivity : ProximitySensorActivity() {
     private lateinit var statsViewModel: StatisticsListViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        // Flag in manifest should be enough starting Android 8.1
+        if (Version.sdkStrictlyBelow(Version.API27_OREO_81)) {
+            Compatibility.setShowWhenLocked(this, true)
+            Compatibility.setTurnScreenOn(this, true)
+            Compatibility.requestDismissKeyguard(this)
+        }
 
-        Compatibility.setShowWhenLocked(this, true)
-        Compatibility.setTurnScreenOn(this, true)
-        // Leaks on API 27+: https://stackoverflow.com/questions/60477120/keyguardmanager-memory-leak
-        Compatibility.requestDismissKeyguard(this)
+        super.onCreate(savedInstanceState)
 
         binding = DataBindingUtil.setContentView(this, R.layout.voip_activity)
         binding.lifecycleOwner = this
@@ -79,6 +84,10 @@ class CallActivity : ProximitySensorActivity() {
 
         statsViewModel = ViewModelProvider(navControllerStoreOwner)[StatisticsListViewModel::class.java]
 
+        val isInPipMode = Compatibility.isInPictureInPictureMode(this)
+        Log.i("[Call Activity] onPostCreate: is in PiP mode? $isInPipMode")
+        controlsViewModel.pipMode.value = isInPipMode
+
         controlsViewModel.askPermissionEvent.observe(
             this
         ) {
@@ -97,13 +106,20 @@ class CallActivity : ProximitySensorActivity() {
         controlsViewModel.proximitySensorEnabled.observe(
             this
         ) { enabled ->
+            Log.i(
+                "[Call Activity] ${if (enabled) "Enabling" else "Disabling"} proximity sensor (if possible)"
+            )
             enableProximitySensor(enabled)
         }
 
         controlsViewModel.isVideoEnabled.observe(
             this
         ) { enabled ->
-            Compatibility.enableAutoEnterPiP(this, enabled, conferenceViewModel.conferenceExists.value == true)
+            Compatibility.enableAutoEnterPiP(
+                this,
+                enabled,
+                conferenceViewModel.conferenceExists.value == true
+            )
         }
 
         controlsViewModel.callStatsVisible.observe(
@@ -123,23 +139,19 @@ class CallActivity : ProximitySensorActivity() {
             }
         }
 
-        callsViewModel.askWriteExternalStoragePermissionEvent.observe(
-            this
-        ) {
-            it.consume {
-                Log.i("[Call Activity] Asking for WRITE_EXTERNAL_STORAGE permission to take snapshot")
-                requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
-            }
-        }
-
         callsViewModel.currentCallData.observe(
             this
         ) { callData ->
-            if (callData.call.conference == null) {
-                Log.i("[Call Activity] Current call isn't linked to a conference, changing fragment")
+            val call = callData.call
+            if (call.conference == null) {
+                Log.i(
+                    "[Call Activity] Current call isn't linked to a conference, switching to SingleCall fragment"
+                )
                 navigateToActiveCall()
             } else {
-                Log.i("[Call Activity] Current call is linked to a conference, changing fragment")
+                Log.i(
+                    "[Call Activity] Current call is linked to a conference, switching to ConferenceCall fragment"
+                )
                 navigateToConferenceCall()
             }
         }
@@ -157,10 +169,14 @@ class CallActivity : ProximitySensorActivity() {
             this
         ) { exists ->
             if (exists) {
-                Log.i("[Call Activity] Found active conference, changing fragment")
+                Log.i(
+                    "[Call Activity] Found active conference, changing  switching to ConferenceCall fragment"
+                )
                 navigateToConferenceCall()
             } else if (coreContext.core.callsNb > 0) {
-                Log.i("[Call Activity] Conference no longer exists, changing fragment")
+                Log.i(
+                    "[Call Activity] Conference no longer exists, switching to SingleCall fragment"
+                )
                 navigateToActiveCall()
             }
         }
@@ -186,11 +202,16 @@ class CallActivity : ProximitySensorActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
         newConfig: Configuration
     ) {
-        Log.i("[Call Activity] Is in PiP mode? $isInPictureInPictureMode")
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+
+        Log.i(
+            "[Call Activity] onPictureInPictureModeChanged: is in PiP mode? $isInPictureInPictureMode"
+        )
         if (::controlsViewModel.isInitialized) {
             // To hide UI except for TextureViews
             controlsViewModel.pipMode.value = isInPictureInPictureMode
@@ -240,8 +261,10 @@ class CallActivity : ProximitySensorActivity() {
     }
 
     override fun onDestroy() {
-        coreContext.core.nativeVideoWindowId = null
-        coreContext.core.nativePreviewWindowId = null
+        if (coreContext.core.globalState != GlobalState.Off) {
+            coreContext.core.nativeVideoWindowId = null
+            coreContext.core.nativePreviewWindowId = null
+        }
 
         super.onDestroy()
     }
@@ -259,11 +282,6 @@ class CallActivity : ProximitySensorActivity() {
         ) {
             Log.i("[Call Activity] Asking for CAMERA permission")
             permissionsRequiredList.add(Manifest.permission.CAMERA)
-        }
-
-        if (Version.sdkAboveOrEqual(Version.API31_ANDROID_12) && !PermissionHelper.get().hasBluetoothConnectPermission()) {
-            Log.i("[Call Activity] Asking for BLUETOOTH_CONNECT permission")
-            permissionsRequiredList.add(Compatibility.BLUETOOTH_CONNECT)
         }
 
         if (permissionsRequiredList.isNotEmpty()) {
@@ -290,15 +308,13 @@ class CallActivity : ProximitySensorActivity() {
                         coreContext.core.reloadVideoDevices()
                         controlsViewModel.toggleVideo()
                     }
-                    Compatibility.BLUETOOTH_CONNECT -> if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
-                        Log.i("[Call Activity] BLUETOOTH_CONNECT permission has been granted")
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE -> if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+                        Log.i(
+                            "[Call Activity] WRITE_EXTERNAL_STORAGE permission has been granted, taking snapshot"
+                        )
+                        controlsViewModel.takeSnapshot()
                     }
                 }
-            }
-        } else if (requestCode == 1) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.i("[Call Activity] WRITE_EXTERNAL_STORAGE permission has been granted, taking snapshot")
-                callsViewModel.takeSnapshot()
             }
         }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -306,7 +322,9 @@ class CallActivity : ProximitySensorActivity() {
 
     override fun onLayoutChanges(foldingFeature: FoldingFeature?) {
         foldingFeature ?: return
-        Log.i("[Call Activity] Folding feature state changed: ${foldingFeature.state}, orientation is ${foldingFeature.orientation}")
+        Log.i(
+            "[Call Activity] Folding feature state changed: ${foldingFeature.state}, orientation is ${foldingFeature.orientation}"
+        )
 
         controlsViewModel.foldingState.value = foldingFeature
     }

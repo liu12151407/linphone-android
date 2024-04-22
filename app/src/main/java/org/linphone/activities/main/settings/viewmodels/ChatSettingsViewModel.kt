@@ -50,11 +50,6 @@ class ChatSettingsViewModel : GenericSettingsViewModel() {
             core.maxSizeForAutoDownloadIncomingFiles = maxSize
             autoDownloadMaxSize.value = maxSize
             updateAutoDownloadIndexFromMaxSize(maxSize)
-
-            // Auto download isn't compatible with making downloaded images public
-            if (position > 0 && downloadedMediaPublic.value == true) {
-                downloadedMediaPublic.value = false
-            }
         }
     }
     val autoDownloadIndex = MutableLiveData<Int>()
@@ -66,7 +61,7 @@ class ChatSettingsViewModel : GenericSettingsViewModel() {
                 val maxSize = newValue.toInt()
                 core.maxSizeForAutoDownloadIncomingFiles = maxSize
                 updateAutoDownloadIndexFromMaxSize(maxSize)
-            } catch (nfe: NumberFormatException) {
+            } catch (_: NumberFormatException) {
             }
         }
     }

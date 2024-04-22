@@ -26,7 +26,10 @@ import android.content.Intent
 import android.database.CursorIndexOutOfBoundsException
 import android.net.Uri
 import android.os.Environment
+import android.os.ParcelFileDescriptor
+import android.os.Process.myUid
 import android.provider.OpenableColumns
+import android.system.Os.fstat
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import java.io.*
@@ -37,13 +40,21 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.linphone.LinphoneApplication.Companion.coreContext
+import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.core.tools.Log
 
 class FileUtils {
-    companion object {
-        const val VFS_PLAIN_FILE_EXTENSION = ".bctbx_evfs_plain"
+    enum class MimeType {
+        PlainText,
+        Pdf,
+        Image,
+        Video,
+        Audio,
+        Unknown
+    }
 
+    companion object {
         fun getNameFromFilePath(filePath: String): String {
             var name = filePath
             val i = filePath.lastIndexOf('/')
@@ -54,67 +65,48 @@ class FileUtils {
         }
 
         fun getExtensionFromFileName(fileName: String): String {
-            val realFileName = if (fileName.endsWith(VFS_PLAIN_FILE_EXTENSION)) {
-                fileName.substring(0, fileName.length - VFS_PLAIN_FILE_EXTENSION.length)
-            } else fileName
-
-            var extension = MimeTypeMap.getFileExtensionFromUrl(realFileName)
+            var extension = MimeTypeMap.getFileExtensionFromUrl(fileName)
             if (extension.isNullOrEmpty()) {
-                val i = realFileName.lastIndexOf('.')
+                val i = fileName.lastIndexOf('.')
                 if (i > 0) {
-                    extension = realFileName.substring(i + 1)
+                    extension = fileName.substring(i + 1)
                 }
             }
 
-            return extension
+            return extension.lowercase(Locale.getDefault())
         }
 
-        fun isPlainTextFile(path: String): Boolean {
-            val extension = getExtensionFromFileName(path).lowercase(Locale.getDefault())
-            val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-            return type?.startsWith("text/plain") ?: false
-        }
-
-        fun isExtensionPdf(path: String): Boolean {
-            val extension = getExtensionFromFileName(path).lowercase(Locale.getDefault())
-            val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-            return type?.startsWith("application/pdf") ?: false
+        fun getMimeType(type: String?): MimeType {
+            if (type.isNullOrEmpty()) return MimeType.Unknown
+            return when {
+                type.startsWith("image/") -> MimeType.Image
+                type.startsWith("text/plain") -> MimeType.PlainText
+                type.startsWith("video/") -> MimeType.Video
+                type.startsWith("audio/") -> MimeType.Audio
+                type.startsWith("application/pdf") -> MimeType.Pdf
+                else -> MimeType.Unknown
+            }
         }
 
         fun isExtensionImage(path: String): Boolean {
-            val extension = getExtensionFromFileName(path).lowercase(Locale.getDefault())
+            val extension = getExtensionFromFileName(path)
             val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-            return type?.startsWith("image/") ?: false
+            return getMimeType(type) == MimeType.Image
         }
 
         fun isExtensionVideo(path: String): Boolean {
-            val extension = getExtensionFromFileName(path).lowercase(Locale.getDefault())
+            val extension = getExtensionFromFileName(path)
             val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-            return type?.startsWith("video/") ?: false
-        }
-
-        fun isExtensionAudio(path: String): Boolean {
-            val extension = getExtensionFromFileName(path).lowercase(Locale.getDefault())
-            val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-            return type?.startsWith("audio/") ?: false
+            return getMimeType(type) == MimeType.Video
         }
 
         fun clearExistingPlainFiles() {
-            for (file in coreContext.context.filesDir.listFiles().orEmpty()) {
-                if (file.path.endsWith(VFS_PLAIN_FILE_EXTENSION)) {
-                    Log.w("[File Utils] Found forgotten plain file: ${file.path}, deleting it")
-                    deleteFile(file.path)
-                }
-            }
-            for (file in coreContext.context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)?.listFiles().orEmpty()) {
-                if (file.path.endsWith(VFS_PLAIN_FILE_EXTENSION)) {
-                    Log.w("[File Utils] Found forgotten plain file: ${file.path}, deleting it")
-                    deleteFile(file.path)
-                }
-            }
-            for (file in coreContext.context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.listFiles().orEmpty()) {
-                if (file.path.endsWith(VFS_PLAIN_FILE_EXTENSION)) {
-                    Log.w("[File Utils] Found forgotten plain file: ${file.path}, deleting it")
+            val dir = File(corePreferences.vfsCachePath)
+            if (dir.exists()) {
+                for (file in dir.listFiles().orEmpty()) {
+                    Log.w(
+                        "[File Utils] [VFS] Found forgotten plain file [${file.path}], deleting it"
+                    )
                     deleteFile(file.path)
                 }
             }
@@ -133,7 +125,11 @@ class FileUtils {
             }
 
             val returnPath: File = path ?: coreContext.context.filesDir
-            if (path == null) Log.w("[File Utils] Couldn't get external storage path, using internal")
+            if (path == null) {
+                Log.w(
+                    "[File Utils] Couldn't get external storage path, using internal"
+                )
+            }
 
             return returnPath
         }
@@ -142,14 +138,10 @@ class FileUtils {
             val path = coreContext.context.cacheDir
             Log.i("[File Utils] Cache directory is: $path")
 
-            val realFileName = if (fileName.endsWith(VFS_PLAIN_FILE_EXTENSION)) {
-                fileName.substring(0, fileName.length - VFS_PLAIN_FILE_EXTENSION.length)
-            } else fileName
-            var file = File(path, realFileName)
-
+            var file = File(path, fileName)
             var prefix = 1
             while (file.exists()) {
-                file = File(path, prefix.toString() + "_" + realFileName)
+                file = File(path, prefix.toString() + "_" + fileName)
                 Log.w("[File Utils] File with that name already exists, renamed to ${file.name}")
                 prefix += 1
             }
@@ -182,7 +174,7 @@ class FileUtils {
                             filePath = dataUri.toString()
                             Log.i("[File Utils] Using data URI $filePath")
                         }
-                        filePath = cleanFilePath(filePath)
+                        filePath = copyToLocalStorage(filePath)
                         if (filePath != null) list.add(filePath)
                     }
                     return list
@@ -199,13 +191,13 @@ class FileUtils {
                         filePath = temporaryImageFilePath.absolutePath
                         Log.i("[File Utils] Data URI is null, using $filePath")
                     }
-                    filePath = cleanFilePath(filePath)
+                    filePath = copyToLocalStorage(filePath)
                     if (filePath != null) return arrayListOf(filePath)
                 }
             } else if (temporaryImageFilePath?.exists() == true) {
                 filePath = temporaryImageFilePath.absolutePath
                 Log.i("[File Utils] Data is null, using $filePath")
-                filePath = cleanFilePath(filePath)
+                filePath = copyToLocalStorage(filePath)
                 if (filePath != null) return arrayListOf(filePath)
             }
             return arrayListOf()
@@ -235,10 +227,10 @@ class FileUtils {
                 filePath = temporaryImageFilePath.absolutePath
                 Log.i("[File Utils] Data is null, using $filePath")
             }
-            return cleanFilePath(filePath)
+            return copyToLocalStorage(filePath)
         }
 
-        private suspend fun cleanFilePath(filePath: String?): String? {
+        suspend fun copyToLocalStorage(filePath: String?): String? {
             if (filePath != null) {
                 val uriToParse = Uri.parse(filePath)
                 if (filePath.startsWith("content://com.android.contacts/contacts/lookup/")) {
@@ -248,7 +240,9 @@ class FileUtils {
                     filePath.startsWith("file://")
                 ) {
                     val result = getFilePath(coreContext.context, uriToParse)
-                    Log.i("[File Utils] Path was using a content or file scheme, real path is: $result")
+                    Log.i(
+                        "[File Utils] Path was using a content or file scheme, real path is: $result"
+                    )
                     if (result == null) {
                         Log.e("[File Utils] Failed to get access to file $uriToParse")
                     }
@@ -280,6 +274,21 @@ class FileUtils {
             val name: String = getNameFromUri(uri, context)
 
             try {
+                if (fstat(
+                        ParcelFileDescriptor.open(
+                                File(uri.path),
+                                ParcelFileDescriptor.MODE_READ_ONLY
+                            ).fileDescriptor
+                    ).st_uid != myUid()
+                ) {
+                    Log.e("[File Utils] File descriptor UID different from our, denying copy!")
+                    return result
+                }
+            } catch (e: Exception) {
+                Log.e("[File Utils] Can't check file ownership: ", e)
+            }
+
+            try {
                 val localFile: File = createFile(name)
                 val remoteFile =
                     context.contentResolver.openInputStream(uri)
@@ -297,7 +306,9 @@ class FileUtils {
                     } else {
                         Log.e("[File Utils] Copy failed")
                     }
-                    remoteFile?.close()
+                    withContext(Dispatchers.IO) {
+                        remoteFile?.close()
+                    }
                 }
             } catch (e: IOException) {
                 Log.e("[File Utils] getFilePath exception: ", e)
@@ -320,10 +331,14 @@ class FileUtils {
                             if (displayName != null) {
                                 name = displayName
                             } else {
-                                Log.e("[File Utils] Failed to get the display name for URI $uri, returned value is null")
+                                Log.e(
+                                    "[File Utils] Failed to get the display name for URI $uri, returned value is null"
+                                )
                             }
                         } catch (e: CursorIndexOutOfBoundsException) {
-                            Log.e("[File Utils] Failed to get the display name for URI $uri, exception is $e")
+                            Log.e(
+                                "[File Utils] Failed to get the display name for URI $uri, exception is $e"
+                            )
                         }
                     } else {
                         Log.e("[File Utils] Couldn't get DISPLAY_NAME column index for URI: $uri")
@@ -479,7 +494,9 @@ class FileUtils {
                 } else {
                     "file/$extension"
                 }
-                Log.w("[File Viewer] Can't get MIME type from extension: $extension, will use $type")
+                Log.w(
+                    "[File Viewer] Can't get MIME type from extension: $extension, will use $type"
+                )
             }
 
             intent.setDataAndType(contentUri, type)
@@ -532,6 +549,14 @@ class FileUtils {
             inStream.close()
             outStream.flush()
             outStream.close()
+        }
+
+        fun countFilesInDirectory(path: String): Int {
+            val dir = File(path)
+            if (dir.exists()) {
+                return dir.listFiles().orEmpty().size
+            }
+            return -1
         }
     }
 }

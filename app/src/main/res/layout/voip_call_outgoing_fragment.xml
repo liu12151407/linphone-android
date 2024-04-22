@@ -59,6 +59,7 @@
             android:layout_height="0dp"
             android:layout_margin="10dp"
             android:contentDescription="@null"
+            android:background="@drawable/generated_avatar_bg"
             android:visibility="@{callsViewModel.currentCallData.isConferenceCall ? View.GONE : View.VISIBLE}"
             app:layout_constraintBottom_toTopOf="@id/conference_avatar"
             app:layout_constraintEnd_toEndOf="parent"
@@ -66,7 +67,8 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/outgoing_call_timer"
             app:layout_constraintVertical_chainStyle="packed"
-            app:layout_constraintWidth_max="@dimen/voip_contact_avatar_max_size" />
+            app:layout_constraintWidth_max="@dimen/voip_contact_avatar_max_size"
+            app:layout_constraintDimensionRatio="1:1" />
 
         <ImageView
             android:id="@+id/conference_avatar"
@@ -109,6 +111,7 @@
             android:gravity="center"
             android:maxLines="1"
             android:text="@{callsViewModel.currentCallData.isConferenceCall ? callsViewModel.currentCallData.remoteConferenceSubject : callsViewModel.currentCallData.displayableAddress, default=`sip:bilbo.baggins@sip.linphone.org`}"
+            android:textIsSelectable="true"
             app:layout_constraintBottom_toTopOf="@id/buttons"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"

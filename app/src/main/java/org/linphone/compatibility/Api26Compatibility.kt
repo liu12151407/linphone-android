@@ -27,10 +27,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.telecom.CallAudioState
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.RemoteViews
@@ -70,7 +70,9 @@ class Api26Compatibility {
                     if (!activity.enterPictureInPictureMode(params)) {
                         Log.e("[Call] Failed to enter PiP mode")
                     } else {
-                        Log.i("[Call] Entering PiP mode with ${if (conference) "portrait" else "landscape"} aspect ratio")
+                        Log.i(
+                            "[Call] Entering PiP mode with ${if (conference) "portrait" else "landscape"} aspect ratio"
+                        )
                     }
                 } catch (e: Exception) {
                     Log.e("[Call] Can't build PiP params: $e")
@@ -167,10 +169,25 @@ class Api26Compatibility {
             val info: String
 
             val remoteContact = call.remoteContact
-            val conferenceAddress = if (remoteContact != null) coreContext.core.interpretUrl(remoteContact, false) else null
-            val conferenceInfo = if (conferenceAddress != null) coreContext.core.findConferenceInformationFromUri(conferenceAddress) else null
+            val conferenceAddress = if (remoteContact != null) {
+                coreContext.core.interpretUrl(
+                    remoteContact,
+                    false
+                )
+            } else {
+                null
+            }
+            val conferenceInfo = if (conferenceAddress != null) {
+                coreContext.core.findConferenceInformationFromUri(
+                    conferenceAddress
+                )
+            } else {
+                null
+            }
             if (conferenceInfo == null) {
-                Log.i("[Notifications Manager] No conference info found for remote contact address $remoteContact")
+                Log.i(
+                    "[Notifications Manager] No conference info found for remote contact address $remoteContact"
+                )
                 contact = coreContext.contactsManager.findContactByAddress(call.remoteAddress)
                 roundPicture =
                     ImageUtils.getRoundBitmapFromUri(context, contact?.getThumbnailUri())
@@ -181,12 +198,17 @@ class Api26Compatibility {
                 contact = null
                 displayName = conferenceInfo.subject ?: context.getString(R.string.conference)
                 address = LinphoneUtils.getDisplayableAddress(conferenceInfo.organizer)
-                roundPicture = BitmapFactory.decodeResource(context.resources, R.drawable.voip_multiple_contacts_avatar_alt)
+                roundPicture = coreContext.contactsManager.groupBitmap
                 info = context.getString(R.string.incoming_group_call_notification_title)
-                Log.i("[Notifications Manager] Displaying incoming group call notification with subject $displayName for remote contact address $remoteContact")
+                Log.i(
+                    "[Notifications Manager] Displaying incoming group call notification with subject $displayName for remote contact address $remoteContact"
+                )
             }
 
-            val notificationLayoutHeadsUp = RemoteViews(context.packageName, R.layout.call_incoming_notification_heads_up)
+            val notificationLayoutHeadsUp = RemoteViews(
+                context.packageName,
+                R.layout.call_incoming_notification_heads_up
+            )
             notificationLayoutHeadsUp.setTextViewText(R.id.caller, displayName)
             notificationLayoutHeadsUp.setTextViewText(R.id.sip_uri, address)
             notificationLayoutHeadsUp.setTextViewText(R.id.incoming_call_info, info)
@@ -195,7 +217,10 @@ class Api26Compatibility {
                 notificationLayoutHeadsUp.setImageViewBitmap(R.id.caller_picture, roundPicture)
             }
 
-            val builder = NotificationCompat.Builder(context, context.getString(R.string.notification_channel_incoming_call_id))
+            val builder = NotificationCompat.Builder(
+                context,
+                context.getString(R.string.notification_channel_incoming_call_id)
+            )
                 .setStyle(NotificationCompat.DecoratedCustomViewStyle())
                 .addPerson(notificationsManager.getPerson(contact, displayName, roundPicture))
                 .setSmallIcon(R.drawable.topbar_call_notification)
@@ -236,11 +261,21 @@ class Api26Compatibility {
             val person: Person
 
             val conferenceAddress = LinphoneUtils.getConferenceAddress(call)
-            val conferenceInfo = if (conferenceAddress != null) coreContext.core.findConferenceInformationFromUri(conferenceAddress) else null
-            if (conferenceInfo != null) {
-                Log.i("[Notifications Manager] Displaying group call notification with subject ${conferenceInfo.subject}")
+            val conferenceInfo = if (conferenceAddress != null) {
+                coreContext.core.findConferenceInformationFromUri(
+                    conferenceAddress
+                )
             } else {
-                Log.i("[Notifications Manager] No conference info found for remote contact address ${call.remoteAddress} (${call.remoteContact})")
+                null
+            }
+            if (conferenceInfo != null) {
+                Log.i(
+                    "[Notifications Manager] Displaying group call notification with subject ${conferenceInfo.subject}"
+                )
+            } else {
+                Log.i(
+                    "[Notifications Manager] No conference info found for remote contact address ${call.remoteAddress} (${call.remoteContact})"
+                )
             }
 
             if (conferenceInfo == null) {
@@ -252,7 +287,7 @@ class Api26Compatibility {
                 person = notificationsManager.getPerson(contact, displayName, roundPicture)
             } else {
                 title = conferenceInfo.subject ?: context.getString(R.string.conference)
-                roundPicture = BitmapFactory.decodeResource(context.resources, R.drawable.voip_multiple_contacts_avatar_alt)
+                roundPicture = coreContext.contactsManager.groupBitmap
                 person = Person.Builder()
                     .setName(title)
                     .setIcon(IconCompat.createWithBitmap(roundPicture))
@@ -283,7 +318,8 @@ class Api26Compatibility {
             }
 
             val builder = NotificationCompat.Builder(
-                context, channel
+                context,
+                channel
             )
                 .setContentTitle(title)
                 .setContentText(context.getString(stringResourceId))
@@ -309,7 +345,11 @@ class Api26Compatibility {
 
         @SuppressLint("MissingPermission")
         fun eventVibration(vibrator: Vibrator) {
-            val effect = VibrationEffect.createWaveform(longArrayOf(0L, 100L, 100L), intArrayOf(0, VibrationEffect.DEFAULT_AMPLITUDE, 0), -1)
+            val effect = VibrationEffect.createWaveform(
+                longArrayOf(0L, 100L, 100L),
+                intArrayOf(0, VibrationEffect.DEFAULT_AMPLITUDE, 0),
+                -1
+            )
             val audioAttrs = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
                 .build()
@@ -317,13 +357,18 @@ class Api26Compatibility {
         }
 
         fun changeAudioRouteForTelecomManager(connection: NativeCallWrapper, route: Int): Boolean {
-            Log.i("[Telecom Helper] Changing audio route [$route] on connection ${connection.callId}")
+            Log.i(
+                "[Telecom Helper] Changing audio route [${routeToString(route)}] on connection [${connection.callId}] with state [${connection.stateAsString()}]"
+            )
 
             val audioState = connection.callAudioState
-            if (audioState != null && audioState.route == route) {
-                Log.w("[Telecom Helper] Connection is already using this route")
-                return false
-            } else if (audioState == null) {
+            if (audioState != null) {
+                Log.i("[Telecom Helper] Current audio route is ${routeToString(audioState.route)}")
+                if (audioState.route == route) {
+                    Log.w("[Telecom Helper] Connection is already using this route")
+                    return false
+                }
+            } else {
                 Log.w("[Telecom Helper] Failed to retrieve connection's call audio state!")
                 return false
             }
@@ -343,11 +388,28 @@ class Api26Compatibility {
         }
 
         fun getImeFlagsForSecureChatRoom(): Int {
-            return EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            return EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         }
 
         fun startForegroundService(context: Context, intent: Intent) {
             context.startForegroundService(intent)
+        }
+
+        fun hasTelecomManagerFeature(context: Context): Boolean {
+            return context.packageManager.hasSystemFeature(
+                PackageManager.FEATURE_CONNECTION_SERVICE
+            )
+        }
+
+        private fun routeToString(route: Int): String {
+            return when (route) {
+                CallAudioState.ROUTE_BLUETOOTH -> "BLUETOOTH"
+                CallAudioState.ROUTE_EARPIECE -> "EARPIECE"
+                CallAudioState.ROUTE_SPEAKER -> "SPEAKER"
+                CallAudioState.ROUTE_WIRED_HEADSET -> "WIRED_HEADSET"
+                CallAudioState.ROUTE_WIRED_OR_EARPIECE -> "WIRED_OR_EARPIECE"
+                else -> "Unknown: $route"
+            }
         }
     }
 }

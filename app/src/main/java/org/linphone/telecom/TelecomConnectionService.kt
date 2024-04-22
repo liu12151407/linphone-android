@@ -19,6 +19,7 @@
  */
 package org.linphone.telecom
 
+import android.annotation.TargetApi
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
@@ -31,6 +32,7 @@ import org.linphone.core.Core
 import org.linphone.core.CoreListenerStub
 import org.linphone.core.tools.Log
 
+@TargetApi(29)
 class TelecomConnectionService : ConnectionService() {
     private val listener: CoreListenerStub = object : CoreListenerStub() {
         override fun onCallStateChanged(
@@ -39,19 +41,26 @@ class TelecomConnectionService : ConnectionService() {
             state: Call.State?,
             message: String
         ) {
-            Log.i("[Telecom Connection Service] call [${call.callLog.callId}] state changed: $state")
+            Log.i(
+                "[Telecom Connection Service] call [${call.callLog.callId}] state changed: $state"
+            )
             when (call.state) {
                 Call.State.OutgoingProgress -> {
                     for (connection in TelecomHelper.get().connections) {
                         if (connection.callId.isEmpty()) {
-                            Log.i("[Telecom Connection Service] Updating connection with call ID: ${call.callLog.callId}")
+                            Log.i(
+                                "[Telecom Connection Service] Updating connection with call ID: ${call.callLog.callId}"
+                            )
                             connection.callId = core.currentCall?.callLog?.callId ?: ""
                         }
                     }
                 }
                 Call.State.Error -> onCallError(call)
                 Call.State.End, Call.State.Released -> onCallEnded(call)
-                Call.State.Connected -> onCallConnected(call)
+                Call.State.Paused, Call.State.Pausing, Call.State.PausedByRemote -> onCallPaused(
+                    call
+                )
+                Call.State.Connected, Call.State.StreamsRunning -> onCallConnected(call)
                 else -> {}
             }
         }
@@ -59,9 +68,13 @@ class TelecomConnectionService : ConnectionService() {
         override fun onLastCallEnded(core: Core) {
             val connectionsCount = TelecomHelper.get().connections.size
             if (connectionsCount > 0) {
-                Log.w("[Telecom Connection Service] Last call ended, there is $connectionsCount connections still alive")
+                Log.w(
+                    "[Telecom Connection Service] Last call ended, there is $connectionsCount connections still alive"
+                )
                 for (connection in TelecomHelper.get().connections) {
-                    Log.w("[Telecom Connection Service] Destroying zombie connection ${connection.callId}")
+                    Log.w(
+                        "[Telecom Connection Service] Destroying zombie connection ${connection.callId}"
+                    )
                     connection.setDisconnected(DisconnectCause(DisconnectCause.OTHER))
                     connection.destroy()
                 }
@@ -87,7 +100,7 @@ class TelecomConnectionService : ConnectionService() {
     }
 
     override fun onCreateOutgoingConnection(
-        connectionManagerPhoneAccount: PhoneAccountHandle,
+        connectionManagerPhoneAccount: PhoneAccountHandle?,
         request: ConnectionRequest
     ): Connection {
         if (coreContext.core.callsNb == 0) {
@@ -106,11 +119,15 @@ class TelecomConnectionService : ConnectionService() {
             if (callId == null) {
                 callId = coreContext.core.currentCall?.callLog?.callId ?: ""
             }
-            Log.i("[Telecom Connection Service] Outgoing connection is for call [$callId] with display name [$displayName]")
+            Log.i(
+                "[Telecom Connection Service] Outgoing connection is for call [$callId] with display name [$displayName]"
+            )
 
             // Prevents user dialing back from native dialer app history
             if (callId.isEmpty() && displayName.isNullOrEmpty()) {
-                Log.e("[Telecom Connection Service] Looks like a call was made from native dialer history, aborting")
+                Log.e(
+                    "[Telecom Connection Service] Looks like a call was made from native dialer history, aborting"
+                )
                 return Connection.createFailedConnection(DisconnectCause(DisconnectCause.OTHER))
             }
 
@@ -118,15 +135,21 @@ class TelecomConnectionService : ConnectionService() {
             val call = coreContext.core.calls.find { it.callLog.callId == callId }
             if (call != null) {
                 val callState = call.state
-                Log.i("[Telecom Connection Service] Found outgoing call from ID [$callId] with state [$callState]")
+                Log.i(
+                    "[Telecom Connection Service] Found outgoing call from ID [$callId] with state [$callState]"
+                )
                 when (callState) {
                     Call.State.OutgoingEarlyMedia, Call.State.OutgoingInit, Call.State.OutgoingProgress, Call.State.OutgoingRinging -> connection.setDialing()
                     Call.State.Paused, Call.State.PausedByRemote, Call.State.Pausing -> connection.setOnHold()
-                    Call.State.End, Call.State.Error, Call.State.Released -> connection.setDisconnected(DisconnectCause(DisconnectCause.ERROR))
+                    Call.State.End, Call.State.Error, Call.State.Released -> connection.setDisconnected(
+                        DisconnectCause(DisconnectCause.ERROR)
+                    )
                     else -> connection.setActive()
                 }
             } else {
-                Log.w("[Telecom Connection Service] Outgoing call not found for cal ID [$callId], assuming it's state is dialing")
+                Log.w(
+                    "[Telecom Connection Service] Outgoing call not found for cal ID [$callId], assuming it's state is dialing"
+                )
                 connection.setDialing()
             }
 
@@ -149,7 +172,7 @@ class TelecomConnectionService : ConnectionService() {
     }
 
     override fun onCreateIncomingConnection(
-        connectionManagerPhoneAccount: PhoneAccountHandle,
+        connectionManagerPhoneAccount: PhoneAccountHandle?,
         request: ConnectionRequest
     ): Connection {
         if (coreContext.core.callsNb == 0) {
@@ -169,21 +192,29 @@ class TelecomConnectionService : ConnectionService() {
             if (callId == null) {
                 callId = coreContext.core.currentCall?.callLog?.callId ?: ""
             }
-            Log.i("[Telecom Connection Service] Incoming connection is for call [$callId] with display name [$displayName]")
+            Log.i(
+                "[Telecom Connection Service] Incoming connection is for call [$callId] with display name [$displayName]"
+            )
 
             val connection = NativeCallWrapper(callId)
             val call = coreContext.core.calls.find { it.callLog.callId == callId }
             if (call != null) {
                 val callState = call.state
-                Log.i("[Telecom Connection Service] Found incoming call from ID [$callId] with state [$callState]")
+                Log.i(
+                    "[Telecom Connection Service] Found incoming call from ID [$callId] with state [$callState]"
+                )
                 when (callState) {
                     Call.State.IncomingEarlyMedia, Call.State.IncomingReceived -> connection.setRinging()
                     Call.State.Paused, Call.State.PausedByRemote, Call.State.Pausing -> connection.setOnHold()
-                    Call.State.End, Call.State.Error, Call.State.Released -> connection.setDisconnected(DisconnectCause(DisconnectCause.ERROR))
+                    Call.State.End, Call.State.Error, Call.State.Released -> connection.setDisconnected(
+                        DisconnectCause(DisconnectCause.ERROR)
+                    )
                     else -> connection.setActive()
                 }
             } else {
-                Log.w("[Telecom Connection Service] Incoming call not found for cal ID [$callId], assuming it's state is ringing")
+                Log.w(
+                    "[Telecom Connection Service] Incoming call not found for cal ID [$callId], assuming it's state is ringing"
+                )
                 connection.setRinging()
             }
 
@@ -215,6 +246,9 @@ class TelecomConnectionService : ConnectionService() {
         }
 
         TelecomHelper.get().connections.remove(connection)
+        Log.i(
+            "[Telecom Connection Service] Call [$callId] is in error, destroying connection currently in ${connection.stateAsString()}"
+        )
         connection.setDisconnected(DisconnectCause(DisconnectCause.ERROR))
         connection.destroy()
     }
@@ -229,9 +263,24 @@ class TelecomConnectionService : ConnectionService() {
 
         TelecomHelper.get().connections.remove(connection)
         val reason = call.reason
-        Log.i("[Telecom Connection Service] Call [$callId] ended with reason: $reason, destroying connection")
+        Log.i(
+            "[Telecom Connection Service] Call [$callId] ended with reason: $reason, destroying connection currently in ${connection.stateAsString()}"
+        )
         connection.setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
         connection.destroy()
+    }
+
+    private fun onCallPaused(call: Call) {
+        val callId = call.callLog.callId
+        val connection = TelecomHelper.get().findConnectionForCallId(callId.orEmpty())
+        if (connection == null) {
+            Log.e("[Telecom Connection Service] Failed to find connection for call id: $callId")
+            return
+        }
+        Log.i(
+            "[Telecom Connection Service] Setting connection as on hold, currently in ${connection.stateAsString()}"
+        )
+        connection.setOnHold()
     }
 
     private fun onCallConnected(call: Call) {
@@ -242,8 +291,9 @@ class TelecomConnectionService : ConnectionService() {
             return
         }
 
-        if (connection.state != Connection.STATE_HOLDING) {
-            connection.setActive()
-        }
+        Log.i(
+            "[Telecom Connection Service] Setting connection as active, currently in ${connection.stateAsString()}"
+        )
+        connection.setActive()
     }
 }

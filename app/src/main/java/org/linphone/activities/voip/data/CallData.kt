@@ -20,6 +20,7 @@
 package org.linphone.activities.voip.data
 
 import android.view.View
+import android.widget.Toast
 import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
 import java.util.*
@@ -30,6 +31,7 @@ import org.linphone.compatibility.Compatibility
 import org.linphone.contact.GenericContactData
 import org.linphone.core.*
 import org.linphone.core.tools.Log
+import org.linphone.utils.AppUtils
 import org.linphone.utils.LinphoneUtils
 
 open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
@@ -94,11 +96,16 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
             content.filePath = filePath
             content.type = "image"
             content.subtype = "jpeg"
-            content.name = filePath.substring(filePath.indexOf("/") + 1)
+            content.name = filePath.substring(filePath.lastIndexOf("/") + 1)
 
             scope.launch {
                 if (Compatibility.addImageToMediaStore(coreContext.context, content)) {
-                    Log.i("[Call] Adding snapshot ${content.name} to Media Store terminated")
+                    Log.i("[Call] Added snapshot ${content.name} to Media Store")
+                    val message = String.format(
+                        AppUtils.getString(R.string.call_screenshot_taken),
+                        content.name
+                    )
+                    Toast.makeText(coreContext.context, message, Toast.LENGTH_SHORT).show()
                 } else {
                     Log.e("[Call] Something went wrong while copying file to Media Store...")
                 }
@@ -156,12 +163,12 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
     }
 
     fun toggleRecording() {
-        if (call.isRecording) {
+        if (call.params.isRecording) {
             call.stopRecording()
         } else {
             call.startRecording()
         }
-        isRecording.value = call.isRecording
+        isRecording.value = call.params.isRecording
     }
 
     fun showContextMenu(anchor: View) {
@@ -169,7 +176,7 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
     }
 
     fun isActiveAndNotInConference(): Boolean {
-        return isPaused.value == false && isRemotelyPaused.value == false && isInRemoteConference.value == false
+        return isPaused.value == false && isRemotelyPaused.value == false && call.conference?.call != null && isInRemoteConference.value == false
     }
 
     private fun isCallPaused(): Boolean {
@@ -184,7 +191,9 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
             Call.State.PausedByRemote -> {
                 val conference = call.conference
                 if (conference != null && conference.me.isFocus) {
-                    Log.w("[Call] State is paused by remote but we are the focus of the conference, so considering call as active")
+                    Log.w(
+                        "[Call] State is paused by remote but we are the focus of the conference, so considering call as active"
+                    )
                     false
                 } else {
                     true
@@ -202,6 +211,7 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
     }
 
     private fun update() {
+        isRecording.value = call.params.isRecording
         isPaused.value = isCallPaused()
         isRemotelyPaused.value = isCallRemotelyPaused()
         canBePaused.value = canCallBePaused()
@@ -228,11 +238,13 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
 
     private fun updateConferenceInfo() {
         val conference = call.conference
-        isInRemoteConference.value = conference != null
+        isInRemoteConference.value = conference != null && conference.call != null
         if (conference != null) {
             Log.d("[Call] Found conference attached to call")
             remoteConferenceSubject.value = LinphoneUtils.getConferenceSubject(conference)
-            Log.d("[Call] Found conference related to this call with subject [${remoteConferenceSubject.value}]")
+            Log.d(
+                "[Call] Found conference related to this call with subject [${remoteConferenceSubject.value}]"
+            )
 
             val participantsList = arrayListOf<ConferenceInfoParticipantData>()
             for (participant in conference.participantList) {
@@ -241,12 +253,23 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
             }
 
             conferenceParticipants.value = participantsList
-            conferenceParticipantsCountLabel.value = coreContext.context.getString(R.string.conference_participants_title, participantsList.size)
+            conferenceParticipantsCountLabel.value = coreContext.context.getString(
+                R.string.conference_participants_title,
+                participantsList.size
+            )
         } else {
             val conferenceAddress = LinphoneUtils.getConferenceAddress(call)
-            val conferenceInfo = if (conferenceAddress != null) coreContext.core.findConferenceInformationFromUri(conferenceAddress) else null
+            val conferenceInfo = if (conferenceAddress != null) {
+                coreContext.core.findConferenceInformationFromUri(
+                    conferenceAddress
+                )
+            } else {
+                null
+            }
             if (conferenceInfo != null) {
-                Log.d("[Call] Found matching conference info with subject: ${conferenceInfo.subject}")
+                Log.d(
+                    "[Call] Found matching conference info with subject: ${conferenceInfo.subject}"
+                )
                 remoteConferenceSubject.value = conferenceInfo.subject
 
                 val participantsList = arrayListOf<ConferenceInfoParticipantData>()
@@ -266,7 +289,10 @@ open class CallData(val call: Call) : GenericContactData(call.remoteAddress) {
                 }
 
                 conferenceParticipants.value = participantsList
-                conferenceParticipantsCountLabel.value = coreContext.context.getString(R.string.conference_participants_title, participantsList.size)
+                conferenceParticipantsCountLabel.value = coreContext.context.getString(
+                    R.string.conference_participants_title,
+                    participantsList.size
+                )
             }
         }
     }

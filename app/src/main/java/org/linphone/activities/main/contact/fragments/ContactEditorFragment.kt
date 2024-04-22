@@ -20,6 +20,7 @@
 package org.linphone.activities.main.contact.fragments
 
 import android.app.Activity
+import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -27,24 +28,27 @@ import android.os.Parcelable
 import android.provider.MediaStore
 import android.view.View
 import androidx.core.content.FileProvider
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import java.io.File
 import kotlinx.coroutines.launch
+import org.linphone.LinphoneApplication.Companion.coreContext
 import org.linphone.LinphoneApplication.Companion.corePreferences
 import org.linphone.R
 import org.linphone.activities.GenericFragment
 import org.linphone.activities.main.MainActivity
+import org.linphone.activities.main.contact.data.ContactEditorData
 import org.linphone.activities.main.contact.data.NumberOrAddressEditorData
 import org.linphone.activities.main.contact.viewmodels.*
+import org.linphone.activities.main.viewmodels.DialogViewModel
 import org.linphone.activities.navigateToContact
 import org.linphone.core.tools.Log
 import org.linphone.databinding.ContactEditorFragmentBinding
+import org.linphone.utils.DialogUtils
 import org.linphone.utils.FileUtils
 import org.linphone.utils.PermissionHelper
 
 class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), SyncAccountPickerFragment.SyncAccountPickedListener {
-    private lateinit var viewModel: ContactEditorViewModel
+    private lateinit var data: ContactEditorData
     private var temporaryPicturePath: File? = null
 
     override fun getLayoutId(): Int = R.layout.contact_editor_fragment
@@ -54,11 +58,11 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
 
         binding.lifecycleOwner = viewLifecycleOwner
 
-        viewModel = ViewModelProvider(
-            this,
-            ContactEditorViewModelFactory(sharedViewModel.selectedContact.value)
-        )[ContactEditorViewModel::class.java]
-        binding.viewModel = viewModel
+        val contact = sharedViewModel.selectedContact.value
+        val contactRefKey = contact?.refKey
+        val friend = if (contactRefKey != null) coreContext.core.getFriendByRefKey(contactRefKey) else null
+        data = ContactEditorData(friend ?: contact)
+        binding.viewModel = data
 
         useMaterialSharedAxisXForwardAnimation = sharedViewModel.isSlidingPaneSlideable.value == false
 
@@ -67,13 +71,41 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
         }
 
         binding.setSaveChangesClickListener {
-            viewModel.syncAccountName = null
-            viewModel.syncAccountType = null
+            data.syncAccountName = null
+            data.syncAccountType = null
 
-            if (viewModel.c == null && corePreferences.showNewContactAccountDialog) {
-                Log.i("[Contact Editor] New contact, ask user where to store it")
-                SyncAccountPickerFragment(this).show(childFragmentManager, "SyncAccountPicker")
+            if (data.friend == null) {
+                var atLeastASipAddressOrPhoneNumber = false
+                for (addr in data.addresses.value.orEmpty()) {
+                    if (addr.newValue.value.orEmpty().isNotEmpty()) {
+                        atLeastASipAddressOrPhoneNumber = true
+                        break
+                    }
+                }
+                if (!atLeastASipAddressOrPhoneNumber) {
+                    for (number in data.numbers.value.orEmpty()) {
+                        if (number.newValue.value.orEmpty().isNotEmpty()) {
+                            atLeastASipAddressOrPhoneNumber = true
+                            break
+                        }
+                    }
+                }
+                if (!atLeastASipAddressOrPhoneNumber) {
+                    // Contact will be created without phone and SIP address
+                    // Let's warn the user it won't be visible in Linphone app
+                    Log.w(
+                        "[Contact Editor] New contact without SIP address nor phone number, showing warning dialog"
+                    )
+                    showInvisibleContactWarningDialog()
+                } else if (corePreferences.showNewContactAccountDialog) {
+                    Log.i("[Contact Editor] New contact, ask user where to store it")
+                    SyncAccountPickerFragment(this).show(childFragmentManager, "SyncAccountPicker")
+                } else {
+                    Log.i("[Contact Editor] Saving new contact")
+                    saveContact()
+                }
             } else {
+                Log.i("[Contact Editor] Saving contact changes")
                 saveContact()
             }
         }
@@ -85,9 +117,9 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
             newSipUri.newValue.value = sipUri
 
             val list = arrayListOf<NumberOrAddressEditorData>()
-            list.addAll(viewModel.addresses.value.orEmpty())
+            list.addAll(data.addresses.value.orEmpty())
             list.add(newSipUri)
-            viewModel.addresses.value = list
+            data.addresses.value = list
         }
 
         if (!PermissionHelper.required(requireContext()).hasWriteContactsPermission()) {
@@ -97,9 +129,9 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
     }
 
     override fun onSyncAccountClicked(name: String?, type: String?) {
-        Log.i("[Contact Editor] Using account $name / $type")
-        viewModel.syncAccountName = name
-        viewModel.syncAccountType = type
+        Log.i("[Contact Editor] Saving new contact using account $name / $type")
+        data.syncAccountName = name
+        data.syncAccountType = type
         saveContact()
     }
 
@@ -115,31 +147,39 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
                 Log.i("[Contact Editor] WRITE_CONTACTS permission granted")
             } else {
                 Log.w("[Contact Editor] WRITE_CONTACTS permission denied")
-                (activity as MainActivity).showSnackBar(R.string.contact_editor_write_permission_denied)
+                (activity as MainActivity).showSnackBar(
+                    R.string.contact_editor_write_permission_denied
+                )
                 goBack()
             }
         }
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
         if (resultCode == Activity.RESULT_OK) {
             lifecycleScope.launch {
-                val contactImageFilePath = FileUtils.getFilePathFromPickerIntent(data, temporaryPicturePath)
+                val contactImageFilePath = FileUtils.getFilePathFromPickerIntent(
+                    intent,
+                    temporaryPicturePath
+                )
                 if (contactImageFilePath != null) {
-                    viewModel.setPictureFromPath(contactImageFilePath)
+                    data.setPictureFromPath(contactImageFilePath)
                 }
             }
         }
     }
 
     private fun saveContact() {
-        val savedContact = viewModel.save()
+        val savedContact = data.save()
         val id = savedContact.refKey
         if (id != null) {
             Log.i("[Contact Editor] Displaying contact $savedContact")
             navigateToContact(id)
         } else {
+            Log.w(
+                "[Contact Editor] Can't display $savedContact because it doesn't have a refKey, going back"
+            )
             goBack()
         }
     }
@@ -170,8 +210,42 @@ class ContactEditorFragment : GenericFragment<ContactEditorFragmentBinding>(), S
 
         val chooserIntent =
             Intent.createChooser(galleryIntent, getString(R.string.chat_message_pick_file_dialog))
-        chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, cameraIntents.toArray(arrayOf<Parcelable>()))
+        chooserIntent.putExtra(
+            Intent.EXTRA_INITIAL_INTENTS,
+            cameraIntents.toArray(arrayOf<Parcelable>())
+        )
 
         startActivityForResult(chooserIntent, 0)
+    }
+
+    private fun showInvisibleContactWarningDialog() {
+        val dialogViewModel =
+            DialogViewModel(getString(R.string.contacts_new_contact_wont_be_visible_warning_dialog))
+        val dialog: Dialog = DialogUtils.getDialog(requireContext(), dialogViewModel)
+
+        dialogViewModel.showCancelButton(
+            {
+                Log.i("[Contact Editor] Aborting new contact saving")
+                dialog.dismiss()
+            },
+            getString(R.string.no)
+        )
+
+        dialogViewModel.showOkButton(
+            {
+                dialog.dismiss()
+
+                if (corePreferences.showNewContactAccountDialog) {
+                    Log.i("[Contact Editor] New contact, ask user where to store it")
+                    SyncAccountPickerFragment(this).show(childFragmentManager, "SyncAccountPicker")
+                } else {
+                    Log.i("[Contact Editor] Saving new contact")
+                    saveContact()
+                }
+            },
+            getString(R.string.yes)
+        )
+
+        dialog.show()
     }
 }

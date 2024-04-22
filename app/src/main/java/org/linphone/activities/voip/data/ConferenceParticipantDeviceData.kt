@@ -19,7 +19,6 @@
  */
 package org.linphone.activities.voip.data
 
-import android.graphics.SurfaceTexture
 import android.view.TextureView
 import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
@@ -47,6 +46,8 @@ class ConferenceParticipantDeviceData(
 
     val isJoining = MutableLiveData<Boolean>()
 
+    val isActiveSpeaker = MutableLiveData<Boolean>()
+
     private var textureView: TextureView? = null
 
     private val listener = object : ParticipantDeviceListenerStub() {
@@ -54,26 +55,32 @@ class ConferenceParticipantDeviceData(
             participantDevice: ParticipantDevice,
             isSpeaking: Boolean
         ) {
-            Log.i("[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] is ${if (isSpeaking) "speaking" else "not speaking"}")
+            Log.i(
+                "[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] is ${if (isSpeaking) "speaking" else "not speaking"}"
+            )
             this@ConferenceParticipantDeviceData.isSpeaking.value = isSpeaking
         }
 
         override fun onIsMuted(participantDevice: ParticipantDevice, isMuted: Boolean) {
-            Log.i("[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] is ${if (isMuted) "muted" else "not muted"}")
+            Log.i(
+                "[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] is ${if (isMuted) "muted" else "not muted"}"
+            )
             this@ConferenceParticipantDeviceData.isMuted.value = isMuted
         }
 
         override fun onStateChanged(
             participantDevice: ParticipantDevice,
-            state: ParticipantDeviceState
+            state: ParticipantDevice.State
         ) {
-            Log.i("[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] state has changed: $state")
+            Log.i(
+                "[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] state has changed: $state"
+            )
             when (state) {
-                ParticipantDeviceState.Joining, ParticipantDeviceState.Alerting -> isJoining.value = true
-                ParticipantDeviceState.OnHold -> {
+                ParticipantDevice.State.Joining, ParticipantDevice.State.Alerting -> isJoining.value = true
+                ParticipantDevice.State.OnHold -> {
                     isInConference.value = false
                 }
-                ParticipantDeviceState.Present -> {
+                ParticipantDevice.State.Present -> {
                     isJoining.value = false
                     isInConference.value = true
                     updateWindowId(textureView)
@@ -88,7 +95,9 @@ class ConferenceParticipantDeviceData(
             streamType: StreamType
         ) {
             if (streamType == StreamType.Video) {
-                Log.i("[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] video capability changed to $direction")
+                Log.i(
+                    "[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] video capability changed to $direction"
+                )
                 isSendingVideo.value = direction == MediaDirection.SendRecv || direction == MediaDirection.SendOnly
             }
         }
@@ -99,7 +108,9 @@ class ConferenceParticipantDeviceData(
             streamType: StreamType
         ) {
             if (streamType == StreamType.Video) {
-                Log.i("[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] video availability changed to ${if (available) "available" else "unavailable"}")
+                Log.i(
+                    "[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}] video availability changed to ${if (available) "available" else "unavailable"}"
+                )
                 videoAvailable.value = available
                 if (available) {
                     updateWindowId(textureView)
@@ -109,10 +120,13 @@ class ConferenceParticipantDeviceData(
     }
 
     init {
-        Log.i("[Conference Participant Device] Created device width Address [${participantDevice.address.asStringUriOnly()}], is it myself? $isMe")
+        Log.i(
+            "[Conference Participant Device] Created device width Address [${participantDevice.address.asStringUriOnly()}], is it myself? $isMe"
+        )
         participantDevice.addListener(listener)
 
         isSpeaking.value = false
+        isActiveSpeaker.value = false
         isMuted.value = participantDevice.isMuted
 
         videoAvailable.value = participantDevice.getStreamAvailability(StreamType.Video)
@@ -121,7 +135,10 @@ class ConferenceParticipantDeviceData(
         isInConference.value = participantDevice.isInConference
 
         val state = participantDevice.state
-        isJoining.value = state == ParticipantDeviceState.Joining || state == ParticipantDeviceState.Alerting
+        isJoining.value = state == ParticipantDevice.State.Joining || state == ParticipantDevice.State.Alerting
+        Log.i(
+            "[Conference Participant Device] State for participant [${participantDevice.address.asStringUriOnly()}] is $state"
+        )
 
         videoEnabled.value = isVideoAvailableAndSendReceive()
         videoEnabled.addSource(videoAvailable) {
@@ -131,7 +148,9 @@ class ConferenceParticipantDeviceData(
             videoEnabled.value = isVideoAvailableAndSendReceive()
         }
 
-        Log.i("[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}], is in conf? ${isInConference.value}, is video available? ${videoAvailable.value} ($videoCapability), is mic muted? ${isMuted.value}")
+        Log.i(
+            "[Conference Participant Device] Participant [${participantDevice.address.asStringUriOnly()}], is in conf? ${isInConference.value}, is video available? ${videoAvailable.value} ($videoCapability), is mic muted? ${isMuted.value}"
+        )
     }
 
     override fun destroy() {
@@ -151,45 +170,14 @@ class ConferenceParticipantDeviceData(
     fun setTextureView(tv: TextureView) {
         textureView = tv
 
-        if (tv.isAvailable) {
-            Log.i("[Conference Participant Device] Setting textureView [$textureView] for participant [${participantDevice.address.asStringUriOnly()}]")
-            updateWindowId(textureView)
-        } else {
-            Log.i("[Conference Participant Device] Got textureView [$textureView] for participant [${participantDevice.address.asStringUriOnly()}], but it is not available yet")
-            tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(
-                    surface: SurfaceTexture,
-                    width: Int,
-                    height: Int
-                ) {
-                    Log.i("[Conference Participant Device] Setting textureView [$textureView] for participant [${participantDevice.address.asStringUriOnly()}]")
-                    updateWindowId(textureView)
-                }
-
-                override fun onSurfaceTextureSizeChanged(
-                    surface: SurfaceTexture,
-                    width: Int,
-                    height: Int
-                ) { }
-
-                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                    Log.w("[Conference Participant Device] TextureView [$textureView] for participant [${participantDevice.address.asStringUriOnly()}] has been destroyed")
-                    textureView = null
-                    updateWindowId(null)
-                    return true
-                }
-
-                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) { }
-            }
-        }
+        Log.i(
+            "[Conference Participant Device] Setting textureView [$textureView] for participant [${participantDevice.address.asStringUriOnly()}]"
+        )
+        updateWindowId(textureView)
     }
 
     private fun updateWindowId(windowId: Any?) {
-        if (isMe) {
-            coreContext.core.nativePreviewWindowId = windowId
-        } else {
-            participantDevice.nativeVideoWindowId = windowId
-        }
+        participantDevice.nativeVideoWindowId = windowId
     }
 
     private fun isVideoAvailableAndSendReceive(): Boolean {

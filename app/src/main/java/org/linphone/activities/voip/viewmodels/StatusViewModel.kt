@@ -42,6 +42,8 @@ class StatusViewModel : StatusViewModel() {
         MutableLiveData<Event<Boolean>>()
     }
 
+    var previouslyDeclineToken = false
+
     private val listener = object : CoreListenerStub() {
         override fun onCallStatsUpdated(core: Core, call: Call, stats: CallStats) {
             updateCallQualityIcon()
@@ -53,10 +55,12 @@ class StatusViewModel : StatusViewModel() {
             on: Boolean,
             authenticationToken: String?
         ) {
-            if (call.currentParams.mediaEncryption == MediaEncryption.ZRTP && !call.authenticationTokenVerified) {
-                showZrtpDialogEvent.value = Event(call)
-            } else {
-                updateEncryptionInfo(call)
+            updateEncryptionInfo(call)
+            // Check if we just declined a previously validated token
+            // In that case, don't show the ZRTP dialog again
+            if (!previouslyDeclineToken) {
+                previouslyDeclineToken = false
+                showZrtpDialog(call)
             }
         }
 
@@ -80,10 +84,7 @@ class StatusViewModel : StatusViewModel() {
         val currentCall = coreContext.core.currentCall
         if (currentCall != null) {
             updateEncryptionInfo(currentCall)
-
-            if (currentCall.currentParams.mediaEncryption == MediaEncryption.ZRTP && !currentCall.authenticationTokenVerified) {
-                showZrtpDialogEvent.value = Event(currentCall)
-            }
+            showZrtpDialog(currentCall)
         }
     }
 
@@ -95,8 +96,8 @@ class StatusViewModel : StatusViewModel() {
 
     fun showZrtpDialog() {
         val currentCall = coreContext.core.currentCall
-        if (currentCall?.currentParams?.mediaEncryption == MediaEncryption.ZRTP) {
-            showZrtpDialogEvent.value = Event(currentCall)
+        if (currentCall != null) {
+            showZrtpDialog(currentCall, force = true)
         }
     }
 
@@ -113,6 +114,9 @@ class StatusViewModel : StatusViewModel() {
             encryptionContentDescription.value = R.string.content_description_call_secured
             return
         }
+        if (call.state == Call.State.End || call.state == Call.State.Released) {
+            return
+        }
 
         when (call.currentParams.mediaEncryption ?: MediaEncryption.None) {
             MediaEncryption.SRTP, MediaEncryption.DTLS -> {
@@ -121,11 +125,11 @@ class StatusViewModel : StatusViewModel() {
                 encryptionContentDescription.value = R.string.content_description_call_secured
             }
             MediaEncryption.ZRTP -> {
-                encryptionIcon.value = when (call.authenticationTokenVerified) {
+                encryptionIcon.value = when (call.authenticationTokenVerified || call.authenticationToken == null) {
                     true -> R.drawable.security_ok
                     else -> R.drawable.security_pending
                 }
-                encryptionContentDescription.value = when (call.authenticationTokenVerified) {
+                encryptionContentDescription.value = when (call.authenticationTokenVerified || call.authenticationToken == null) {
                     true -> R.string.content_description_call_secured
                     else -> R.string.content_description_call_security_pending
                 }
@@ -137,6 +141,16 @@ class StatusViewModel : StatusViewModel() {
                 encryptionIconVisible.value = call.core.mediaEncryption != MediaEncryption.None
                 encryptionContentDescription.value = R.string.content_description_call_not_secured
             }
+        }
+    }
+
+    private fun showZrtpDialog(call: Call, force: Boolean = false) {
+        if (
+            call.currentParams.mediaEncryption == MediaEncryption.ZRTP &&
+            call.authenticationToken != null &&
+            (!call.authenticationTokenVerified || force)
+        ) {
+            showZrtpDialogEvent.value = Event(call)
         }
     }
 
